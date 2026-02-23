@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TheftGuard V18 (Final Build)</title>
+    
+    <meta name="theme-color" content="#000000">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    
+    <link rel="manifest" href="manifest.json">
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <nav class="navbar fixed-top custom-navbar">
+        <div class="nav-left">
+            <i class="bi bi-lightning-charge-fill brand-logo"></i>
+            <a class="nav-link-custom active" onclick="showPage('dashboard')" id="nav-dash">Dashboard</a>
+            <a class="nav-link-custom" onclick="showPage('cost')" id="nav-cost">Cost</a>
+            <a class="nav-link-custom" data-bs-toggle="modal" data-bs-target="#helpModal">Help</a>
+        </div>
+        <div class="nav-center">
+            <div class="center-title">Energy Monitoring Device</div>
+            <div class="center-subtitle">Real-Time Grid Analysis</div>
+        </div>
+        <div class="nav-right">
+            <button class="btn-login" id="loginBtn" data-bs-toggle="modal" data-bs-target="#loginModal">Log in</button>
+            
+            <div id="userProfile" style="display: none; align-items: center; gap: 15px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span id="userNameDisplay" style="font-size: 13px; font-weight: 600;">ADMIN</span>
+                    <div style="width: 30px; height: 30px; background: #333; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                        <i class="bi bi-person-fill" style="color: #fff;"></i>
+                    </div>
+                </div>
+                <button onclick="handleLogout()" class="btn btn-sm btn-outline-danger" style="font-size: 12px; border-radius: 20px;">Logout</button>
+            </div>
+        </div>
+    </nav>
+
+    <div id="dashboardPage" class="container">
+        
+        <div id="theftAlertBanner">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            CRITICAL ALERT: THEFT DETECTED
+        </div>
+
+        <div class="card-custom mb-4" id="pairingCard" style="display: none; border: 1px solid var(--primary-blue);">
+            <h6 class="sub-label mb-2 text-white"><i class="bi bi-cpu-fill me-2"></i>Device Pairing</h6>
+            <div class="d-flex gap-2">
+                <input type="text" id="macInput" class="form-control" style="background: #2c2c2e; color: white; border: none; text-transform: uppercase;" placeholder="Enter ESP32 MAC (e.g., 24:0A:C4:XX:XX:XX)">
+                <button class="btn btn-primary" onclick="pairDevice()">Pair</button>
+            </div>
+            <small class="text-muted mt-2 d-block" id="pairedDeviceLabel">No device paired yet. Please link a device.</small>
+        </div>
+
+        <div class="card-custom">
+            <div class="view-tabs">
+                <div class="view-tab" onclick="setView('day', this)">Day</div>
+                <div class="view-tab active" onclick="setView('week', this)">Week</div>
+                <div class="view-tab" onclick="setView('month', this)">Month</div>
+                <div class="view-tab" onclick="setView('year', this)">Year</div>
+                <div class="view-tab" style="flex: 0 0 35px;" onclick="toggleCustomDate(this)"><i class="bi bi-calendar4"></i></div>
+            </div>
+
+            <div id="monthSelectorWrapper" class="selector-wrapper">
+                <select id="monthSelect" class="custom-select" onchange="updateMonthData()">
+                    <option value="Feb" selected>February</option>
+                    <option value="Mar">March</option>
+                </select>
+            </div>
+            <div id="daySelectorWrapper" class="selector-wrapper">
+                <input type="date" id="daySelect" class="custom-select" onchange="updateDayData()">
+            </div>
+
+            <div class="sub-selector-container" id="weekSubSelector">
+                <div class="sub-pill" onclick="setSubWeek(4, this)">W4</div>
+                <div class="sub-pill" onclick="setSubWeek(5, this)">W5</div>
+                <div class="sub-pill" onclick="setSubWeek(6, this)">W6</div>
+                <div class="sub-pill active" onclick="setSubWeek(7, this)">W7</div>
+            </div>
+
+            <div class="mb-4">
+                <h6 class="sub-label mb-1" id="timeLabel">9 February - 15 February (Week 7)</h6>
+                <div class="d-flex align-items-baseline">
+                    <h1 class="big-value" id="totalUsageDisplay">-- kWh</h1>
+                </div>
+                <div class="sub-label" id="avgLabel">Loading...</div>
+            </div>
+
+            <div style="height: 300px; width: 100%;">
+                <canvas id="usageChart"></canvas>
+            </div>
+
+            <div class="date-picker-container" id="customDateControls">
+                <div class="row g-2">
+                    <div class="col-6"><label class="sub-label">Start</label><input type="date" id="startDate"></div>
+                    <div class="col-6"><label class="sub-label">End</label><input type="date" id="endDate"></div>
+                    <div class="col-12 mt-2"><button class="btn btn-primary w-100 btn-sm" onclick="applyCustomRange()">Apply</button></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3">
+            <div class="col-6">
+                <div class="card-custom text-center p-3">
+                    <i class="bi bi-lightning-charge-fill" style="color: #ffcc00; font-size: 20px;"></i>
+                    <div class="mt-2" style="font-size: 20px; font-weight: 700;" id="poleCurrent">0.0 A</div>
+                    <div class="sub-label">Source</div>
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="card-custom text-center p-3">
+                    <i class="bi bi-house-fill" style="color: var(--primary-blue); font-size: 20px;"></i>
+                    <div class="mt-2" style="font-size: 20px; font-weight: 700;" id="houseCurrent">0.0 A</div>
+                    <div class="sub-label">Load</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="costPage" class="container" style="display: none;">
+        <div class="card-custom">
+            <h6 class="sub-label text-uppercase mb-2">Current Month Bill</h6>
+            <div class="d-flex align-items-end">
+                <h1 class="big-value text-success" style="font-size: 42px;">₹ 1,425.50</h1>
+                <span class="sub-label ms-2 mb-2">Estimated</span>
+            </div>
+            <div class="mt-3">
+                <div class="progress" style="height: 6px; background: #333;">
+                    <div class="progress-bar bg-success" role="progressbar" style="width: 65%;"></div>
+                </div>
+                <div class="d-flex justify-content-between mt-2">
+                    <small class="text-muted">Consumed: 190 kWh</small>
+                    <small class="text-muted">Budget: ₹ 2,200</small>
+                </div>
+            </div>
+        </div>
+        <div class="card-custom">
+            <h6 class="sub-label mb-3 fw-bold text-white">Cost Breakdown</h6>
+            <div class="cost-row">
+                <span class="text-white-50">Total Units (kWh)</span>
+                <span class="fw-bold">190.2</span>
+            </div>
+            <div class="cost-row">
+                <span class="text-white-50">Rate per Unit (₹)</span>
+                <input type="number" class="cost-input" value="7.50" id="unitRate" onchange="calculateCost()">
+            </div>
+            <div class="cost-row border-top mt-2 pt-2" style="border-color: #444;">
+                <span class="text-white fw-bold">Total Estimated Cost</span>
+                <span class="text-success fw-bold" id="calculatedTotal">₹ 1,426.50</span>
+            </div>
+        </div>
+        <div class="card-custom">
+            <h6 class="sub-label mb-3">6-Month Cost Trend</h6>
+            <div style="height: 200px; width: 100%;">
+                <canvas id="costChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="helpModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title fw-bold">User Guide</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body p-4">
+                    <p class="help-text mb-4" style="color: white; font-size: 16px;">Welcome to the Energy Monitor.</p>
+                    <div class="mb-4">
+                        <h6 style="color:white; font-weight:bold">1. How is Cost Calculated?</h6>
+                        <p class="help-text">Formula: <strong>Total Cost = Units Consumed (kWh) × Rate per Unit (₹)</strong>.</p>
+                    </div>
+                    <div class="mb-4"><h6 style="color:white; font-weight:bold">2. Checking for Theft</h6><p class="help-text">If <strong>Source</strong> > <strong>Load</strong>, theft is detected (Red Alert).</p></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-primary" data-bs-dismiss="modal">Close Guide</button></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="loginModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title fw-bold">Login / Register</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <form>
+                        <div class="mb-3">
+                            <input type="email" id="loginEmail" class="form-control" style="color: white; background: #2c2c2e;" placeholder="Email (e.g., admin@theftguard.com)" required>
+                        </div>
+                        <div class="mb-3">
+                            <input type="password" id="loginPassword" class="form-control" style="color: white; background: #2c2c2e;" placeholder="Password" required>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-outline-light w-50 fw-bold" onclick="handleRegister(event)" id="registerBtn">Create Account</button>
+                            <button type="button" class="btn btn-light w-50 fw-bold" onclick="handleLogin(event)" id="loginSubmitBtn">Login</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    
+    <script src="script.js"></script>
+</body>
+</html>
