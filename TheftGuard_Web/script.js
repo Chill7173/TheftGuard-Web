@@ -19,6 +19,15 @@ const auth = firebase.auth();
 let currentUserUid = null;
 let currentDeviceRef = null; 
 
+// Relay DOM Elements
+const relayToggle = document.getElementById('relayToggle');
+const relayStatusText = document.getElementById('relayStatusText');
+
+// Live Chart Data Arrays (Hold 60 data points for Live/Hour tabs)
+let liveHouseData = Array(60).fill(0);
+let livePoleData = Array(60).fill(0);
+let liveTimeLabels = Array(60).fill('');
+
 // ==========================================
 // 2. DEVICE PAIRING & LIVE LISTENER
 // ==========================================
@@ -48,6 +57,23 @@ function pairDevice() {
     });
 }
 
+// SEND RELAY COMMANDS 
+relayToggle.addEventListener('change', (e) => {
+    const isCutoff = e.target.checked;
+    
+    if (currentDeviceRef) {
+        currentDeviceRef.child('relay_cutoff').set(isCutoff);
+    } else {
+        if (isCutoff) {
+            relayStatusText.innerText = "⚠️ POWER CUT (Not Paired)";
+            relayStatusText.style.color = "#ff3b30";
+        } else {
+            relayStatusText.innerText = "Power is ON (Not Paired)";
+            relayStatusText.style.color = "#4CAF50";
+        }
+    }
+});
+
 function startListeningToDevice(macAddress) {
     if (currentDeviceRef) currentDeviceRef.off(); 
     currentDeviceRef = database.ref('live_grid/' + macAddress);
@@ -55,24 +81,77 @@ function startListeningToDevice(macAddress) {
     currentDeviceRef.on('value', (snapshot) => {
         const data = snapshot.val();
         if (data) {
-            let poleVal = parseFloat(data.pole).toFixed(2);
-            let houseVal = parseFloat(data.house).toFixed(2);
+            // -- SENSOR LOGIC (WITH DEADBAND) --
+            let poleValRaw = data.pole !== undefined ? parseFloat(data.pole) : 0.00;
+            let houseValRaw = data.house !== undefined ? parseFloat(data.house) : 0.00;
+            
+            // DEADBAND: Ignore "Vampire Power" (< 0.10A)
+            if (poleValRaw < 0.10) poleValRaw = 0.00; 
+            if (houseValRaw < 0.10) houseValRaw = 0.00; 
+            
+            let poleVal = poleValRaw.toFixed(2);
+            let houseVal = houseValRaw.toFixed(2);
             
             document.getElementById('poleCurrent').innerText = poleVal + " A";
             document.getElementById('houseCurrent').innerText = houseVal + " A";
             
+            // Push Real Data to Charts
+            updateLiveCharts(houseValRaw, poleValRaw);
+            
+            // 🚨 UPDATED ALERT LOGIC (Threshold: 0.15A)
             const banner = document.getElementById('theftAlertBanner');
-            if (poleVal - houseVal > 1.0) {
-                // Highlight load and source cards
+            let currentDiff = Math.abs(poleValRaw - houseValRaw);
+            
+            if (currentDiff > 0.15) {
                 document.querySelectorAll('.card-custom')[0].classList.add('theft-active');
                 document.querySelectorAll('.card-custom')[2].classList.add('theft-active'); 
+                banner.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i> CRITICAL ALERT: THEFT DETECTED (${currentDiff.toFixed(2)}A LOSS)`;
                 banner.style.display = "block"; 
             } else {
                 document.querySelectorAll('.card-custom').forEach(el => el.classList.remove('theft-active'));
                 banner.style.display = "none"; 
             }
+
+            // -- RELAY CUTOFF --
+            const isCutoff = data.relay_cutoff === true;
+            if (relayToggle.checked !== isCutoff) {
+                relayToggle.checked = isCutoff;
+            }
+            if (isCutoff) {
+                relayStatusText.innerText = "⚠️ POWER CUT";
+                relayStatusText.style.color = "#ff3b30"; 
+            } else {
+                relayStatusText.innerText = "Power is ON";
+                relayStatusText.style.color = "#4CAF50"; 
+            }
         }
     });
+}
+
+// Function to push real data into the charts
+function updateLiveCharts(newHouseVal, newPoleVal) {
+    const now = new Date();
+    const timeString = `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+    
+    liveHouseData.shift(); liveHouseData.push(newHouseVal);
+    livePoleData.shift(); livePoleData.push(newPoleVal);
+    liveTimeLabels.shift(); liveTimeLabels.push(timeString);
+    
+    // Update Blue Chart if Live or Hour is selected
+    if (document.querySelectorAll('.view-tab')[0].classList.contains('active') || document.querySelectorAll('.view-tab')[1].classList.contains('active')) {
+        usageChart.data.labels = liveTimeLabels;
+        usageChart.data.datasets[0].data = liveHouseData;
+        usageChart.update('none'); 
+        document.getElementById('totalUsageDisplay').innerText = newHouseVal.toFixed(2) + " A";
+    }
+    
+    // Update Yellow Chart if Live or Hour is selected
+    if (document.querySelectorAll('.source-tab')[0].classList.contains('active') || document.querySelectorAll('.source-tab')[1].classList.contains('active')) {
+        sourceChart.data.labels = liveTimeLabels;
+        sourceChart.data.datasets[0].data = livePoleData;
+        sourceChart.update('none');
+        document.getElementById('sourceTotalDisplay').innerText = newPoleVal.toFixed(2) + " A";
+    }
 }
 
 // ==========================================
@@ -169,12 +248,21 @@ function handleLogout() {
         document.getElementById('userProfile').style.display = 'none';
         document.getElementById('loginBtn').style.display = 'block';
         document.getElementById('nav-pair').style.display = 'none'; 
-        document.getElementById('poleCurrent').innerText = "0.0 A";
-        document.getElementById('houseCurrent').innerText = "0.0 A";
+        
+        document.getElementById('poleCurrent').innerText = "0.00 A";
+        document.getElementById('houseCurrent').innerText = "0.00 A";
         document.querySelectorAll('.card-custom').forEach(el => el.classList.remove('theft-active'));
         document.getElementById('theftAlertBanner').style.display = "none";
+        
+        relayToggle.checked = false;
+        relayStatusText.innerText = "Power is ON";
+        relayStatusText.style.color = "#4CAF50";
+        
         document.getElementById('loginEmail').value = ""; document.getElementById('loginPassword').value = "";
         document.getElementById('macInput').value = ""; document.getElementById('pairedDeviceLabel').innerText = "No device paired yet.";
+        
+        liveHouseData.fill(0); livePoleData.fill(0); liveTimeLabels.fill('');
+        usageChart.update(); sourceChart.update();
     });
 }
 
@@ -205,14 +293,21 @@ function sendPasswordReset() {
 
 function showPage(pageId) {
     document.getElementById('dashboardPage').style.display = 'none';
+    document.getElementById('controlPage').style.display = 'none';
     document.getElementById('costPage').style.display = 'none';
     document.getElementById('settingsPage').style.display = 'none';
+    
     document.getElementById(pageId + 'Page').style.display = 'block';
 
     document.getElementById('nav-dash').classList.remove('active');
+    document.getElementById('nav-control').classList.remove('active');
     document.getElementById('nav-cost').classList.remove('active');
     
-    if(pageId === 'dashboard') document.getElementById('nav-dash').classList.add('active');
+    if(pageId === 'dashboard') {
+        document.getElementById('nav-dash').classList.add('active');
+        usageChart.update(); sourceChart.update();
+    }
+    if(pageId === 'control') document.getElementById('nav-control').classList.add('active');
     if(pageId === 'cost') {
         document.getElementById('nav-cost').classList.add('active');
         renderCostChart();
@@ -242,17 +337,28 @@ function renderCostChart() {
 
 const chartOptions = {
     responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+    animation: { duration: 0 }, 
     scales: { 
         y: { position: 'right', grid: { color: '#333' }, ticks: { color: '#8e8e93', font: {size: 10} } }, 
-        x: { grid: { display: false }, ticks: { color: '#8e8e93', font: { size: 9 }, autoSkip: false, minRotation: 0, maxRotation: 0 } } 
+        x: { 
+            grid: { display: false }, 
+            ticks: { 
+                color: '#8e8e93', 
+                font: { size: 9 }, 
+                autoSkip: true, 
+                maxRotation: 0, 
+                minRotation: 0,
+                maxTicksLimit: 12 
+            } 
+        } 
     }
 };
 
 const usageCtx = document.getElementById('usageChart').getContext('2d');
-let usageChart = new Chart(usageCtx, { type: 'bar', data: { labels: [], datasets: [{ data: [], backgroundColor: '#0a84ff', borderRadius: 4, barPercentage: 0.8 }] }, options: JSON.parse(JSON.stringify(chartOptions)) });
+let usageChart = new Chart(usageCtx, { type: 'line', data: { labels: liveTimeLabels, datasets: [{ data: liveHouseData, borderColor: '#0a84ff', backgroundColor: 'rgba(10, 132, 255, 0.1)', borderWidth: 2, fill: true, pointRadius: 0 }] }, options: JSON.parse(JSON.stringify(chartOptions)) });
 
 const sourceCtx = document.getElementById('sourceChart').getContext('2d');
-let sourceChart = new Chart(sourceCtx, { type: 'bar', data: { labels: [], datasets: [{ data: [], backgroundColor: '#ffcc00', borderRadius: 4, barPercentage: 0.8 }] }, options: JSON.parse(JSON.stringify(chartOptions)) });
+let sourceChart = new Chart(sourceCtx, { type: 'line', data: { labels: liveTimeLabels, datasets: [{ data: livePoleData, borderColor: '#ffcc00', backgroundColor: 'rgba(255, 204, 0, 0.1)', borderWidth: 2, fill: true, pointRadius: 0 }] }, options: JSON.parse(JSON.stringify(chartOptions)) });
 
 window.onload = function() {
     const now = new Date();
@@ -260,39 +366,16 @@ window.onload = function() {
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
     const todayStr = `${year}-${month}-${day}`;
-    const lastDayOfMonth = new Date(year, now.getMonth() + 1, 0).getDate();
-    const minDate = `${year}-${month}-01`;
-    const maxDate = `${year}-${month}-${String(lastDayOfMonth).padStart(2, '0')}`;
-
-    // Usage Chart Setup
+    
     document.getElementById('daySelect').value = todayStr;
-    const hourDateInput = document.getElementById('hourDateSelect');
-    hourDateInput.value = todayStr; hourDateInput.min = minDate; hourDateInput.max = maxDate;
-    
-    // Source Chart Setup
     document.getElementById('sourceDaySelect').value = todayStr;
-    const sourceHourDateInput = document.getElementById('sourceHourDateSelect');
-    sourceHourDateInput.value = todayStr; sourceHourDateInput.min = minDate; sourceHourDateInput.max = maxDate;
     
-    // Populate 24 hour dropdowns
-    const hourSelect = document.getElementById('hourTimeSelect');
-    const sourceHourSelect = document.getElementById('sourceHourTimeSelect');
-    for(let i=0; i<24; i++) {
-        let opt1 = document.createElement('option'); let opt2 = document.createElement('option');
-        opt1.value = i; opt2.value = i;
-        let displayHour = i % 12 || 12; let ampm = i >= 12 ? 'PM' : 'AM';
-        opt1.text = `${displayHour}:00 ${ampm}`; opt2.text = `${displayHour}:00 ${ampm}`;
-        hourSelect.appendChild(opt1); sourceHourSelect.appendChild(opt2);
-    }
-    document.getElementById('hourTimeSelect').value = now.getHours();
-    document.getElementById('sourceHourTimeSelect').value = now.getHours();
-
-    setView('week', document.querySelectorAll('.view-tab')[3]); 
-    setSourceView('week', document.querySelectorAll('.source-tab')[3]); 
+    setView('minute', document.querySelectorAll('.view-tab')[0]); 
+    setSourceView('minute', document.querySelectorAll('.source-tab')[0]); 
 };
 
 // ==========================================
-// 6. LOAD USAGE CHART LOGIC (BLUE)
+// 6. TABS LOGIC (LIVE DATA vs FAKE UI DATA)
 // ==========================================
 
 function setView(mode, element) {
@@ -302,19 +385,42 @@ function setView(mode, element) {
     document.getElementById('weekSubSelector').style.display = 'none';
     document.getElementById('monthSelectorWrapper').style.display = 'none';
     document.getElementById('daySelectorWrapper').style.display = 'none';
-    document.getElementById('hourSelectorWrapper').style.display = 'none';
+    
     usageChart.options.scales.x.grid.display = false;
+    usageChart.config.type = (mode === 'minute' || mode === 'hour') ? 'line' : 'bar'; 
 
-    if (mode === 'minute') { document.getElementById('timeLabel').innerText = "Live Usage (Last 60 Minutes)"; updateMinuteData(); }
-    else if (mode === 'hour') { document.getElementById('hourSelectorWrapper').style.display = 'flex'; updateHourData(); }
-    else if (mode === 'day') { document.getElementById('daySelectorWrapper').style.display = 'block'; updateDayData(); } 
-    else if (mode === 'week') { document.getElementById('weekSubSelector').style.display = 'flex'; setSubWeek(7, document.querySelectorAll('.sub-pill')[3]); }
-    else if (mode === 'month') { document.getElementById('monthSelectorWrapper').style.display = 'block'; updateMonthData(); }
-    else if (mode === 'year') {
+    if (mode === 'minute') { 
+        document.getElementById('timeLabel').innerText = "Live Real-Time Usage"; 
+        document.getElementById('avgLabel').innerText = "Streaming from hardware...";
+        // 🚨 FIX: Instantly pull the latest real-time value instead of leaving the demo text!
+        document.getElementById('totalUsageDisplay').innerText = Number(liveHouseData[59]).toFixed(2) + " A";
+        
+        usageChart.data.labels = liveTimeLabels;
+        usageChart.data.datasets[0].data = liveHouseData;
+        usageChart.update();
+    } else if (mode === 'hour') {
+        document.getElementById('timeLabel').innerText = "Current Session (Last 60 ticks)"; 
+        document.getElementById('avgLabel').innerText = "Active Database Feed";
+        // 🚨 FIX: Instantly pull the latest real-time value!
+        document.getElementById('totalUsageDisplay').innerText = Number(liveHouseData[59]).toFixed(2) + " A";
+        
+        usageChart.data.labels = liveTimeLabels;
+        usageChart.data.datasets[0].data = liveHouseData;
+        usageChart.update();
+    } else if (mode === 'day') { 
+        document.getElementById('daySelectorWrapper').style.display = 'block'; 
+        updateDayData(); 
+    } else if (mode === 'week') { 
+        document.getElementById('weekSubSelector').style.display = 'flex'; 
+        setSubWeek(7, document.querySelectorAll('.sub-pill')[3]); 
+    } else if (mode === 'month') { 
+        document.getElementById('monthSelectorWrapper').style.display = 'block'; 
+        updateMonthData(); 
+    } else if (mode === 'year') {
         let labels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-        let data = Array.from({length: 12}, () => Math.random() * 100 + 50);
+        let data = Array.from({length: 12}, () => Math.random() * 50 + 100);
         let total = data.reduce((a, b) => a + b, 0);
-        document.getElementById('timeLabel').innerText = "Year 2026";
+        document.getElementById('timeLabel').innerText = "Year 2026 (Demo Data)";
         document.getElementById('totalUsageDisplay').innerText = total.toFixed(1) + " kWh";
         document.getElementById('avgLabel').innerText = "Total: 1.2 MWh";
         usageChart.data.labels = labels; usageChart.data.datasets[0].data = data; usageChart.update();
@@ -327,7 +433,7 @@ function setSubWeek(weekNum, element) {
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     let data = Array.from({length: 7}, () => Math.random() * 10 + weekNum);
     let total = data.reduce((a, b) => a + b, 0);
-    document.getElementById('timeLabel').innerText = weekNum === 7 ? "9 Feb - 15 Feb (Week 7)" : `Week ${weekNum}`;
+    document.getElementById('timeLabel').innerText = weekNum === 7 ? "Week 7 (Demo Data)" : `Week ${weekNum} (Demo Data)`;
     document.getElementById('totalUsageDisplay').innerText = total.toFixed(1) + " kWh";
     document.getElementById('avgLabel').innerText = "Daily Avg: " + (total/7).toFixed(1) + " kWh";
     usageChart.data.labels = days; usageChart.data.datasets[0].data = data; usageChart.update();
@@ -335,10 +441,10 @@ function setSubWeek(weekNum, element) {
 
 function updateDayData() {
     const dateStr = new Date(document.getElementById('daySelect').value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    let labels = Array.from({length: 24}, (_, i) => i < 10 ? "0" + i : i);
+    let labels = Array.from({length: 24}, (_, i) => i.toString());
     let data = Array.from({length: 24}, () => Math.random() * 2.5);
     let total = data.reduce((a, b) => a + b, 0);
-    document.getElementById('timeLabel').innerText = `Usage on ${dateStr}`;
+    document.getElementById('timeLabel').innerText = `Usage on ${dateStr} (Demo Data)`;
     document.getElementById('totalUsageDisplay').innerText = total.toFixed(1) + " kWh";
     document.getElementById('avgLabel').innerText = "Peak: 8 PM";
     usageChart.data.labels = labels; usageChart.data.datasets[0].data = data; usageChart.update();
@@ -349,41 +455,9 @@ function updateMonthData() {
     let labels = Array.from({length: 30}, (_, i) => (i+1).toString());
     let data = Array.from({length: 30}, () => Math.random() * 10 + 2);
     let total = data.reduce((a, b) => a + b, 0);
-    document.getElementById('timeLabel').innerText = `Usage for ${select.options[select.selectedIndex].text}`;
+    document.getElementById('timeLabel').innerText = `Usage for ${select.options[select.selectedIndex].text} (Demo Data)`;
     document.getElementById('totalUsageDisplay').innerText = total.toFixed(1) + " kWh";
     document.getElementById('avgLabel').innerText = "Daily Avg: " + (total/30).toFixed(1) + " kWh";
-    usageChart.data.labels = labels; usageChart.data.datasets[0].data = data; usageChart.update();
-}
-
-function updateMinuteData() {
-    let labels = [], data = [], now = new Date();
-    for(let i = 59; i >= 0; i--) {
-        let pastTime = new Date(now.getTime() - (i * 60000));
-        let mins = pastTime.getMinutes().toString().padStart(2, '0');
-        labels.push(mins === '00' ? `${pastTime.getHours() % 12 || 12}:00` : mins);
-        data.push(Math.random() * 1.0 + 0.5); 
-    }
-    document.getElementById('totalUsageDisplay').innerText = data.reduce((a, b) => a + b, 0).toFixed(2) + " kWh";
-    document.getElementById('avgLabel').innerText = "Updating in real-time...";
-    
-    usageChart.options.scales.x.grid.display = true;
-    usageChart.options.scales.x.grid.drawOnChartArea = true;
-    usageChart.options.scales.x.grid.color = (context) => (context.index !== undefined && labels[context.index].includes(':00')) ? 'rgba(255, 255, 255, 0.4)' : 'transparent';
-    usageChart.options.scales.x.grid.borderDash = [5, 5]; 
-    
-    usageChart.data.labels = labels; usageChart.data.datasets[0].data = data; usageChart.update();
-}
-
-function updateHourData() {
-    const dateStr = new Date(document.getElementById('hourDateSelect').value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    let h = parseInt(document.getElementById('hourTimeSelect').value);
-    let displayHour = h % 12 || 12, ampm = h >= 12 ? 'PM' : 'AM';
-    let labels = Array.from({length: 60}, (_, i) => i.toString().padStart(2, '0'));
-    let data = Array.from({length: 60}, () => Math.random() * 1.5);
-    
-    document.getElementById('timeLabel').innerText = `Usage on ${dateStr} (${displayHour}:00 ${ampm} - ${displayHour}:59 ${ampm})`;
-    document.getElementById('totalUsageDisplay').innerText = data.reduce((a, b) => a + b, 0).toFixed(2) + " kWh";
-    document.getElementById('avgLabel').innerText = "Hourly Total";
     usageChart.data.labels = labels; usageChart.data.datasets[0].data = data; usageChart.update();
 }
 
@@ -398,19 +472,42 @@ function setSourceView(mode, element) {
     document.getElementById('sourceWeekSubSelector').style.display = 'none';
     document.getElementById('sourceMonthSelectorWrapper').style.display = 'none';
     document.getElementById('sourceDaySelectorWrapper').style.display = 'none';
-    document.getElementById('sourceHourSelectorWrapper').style.display = 'none';
+    
     sourceChart.options.scales.x.grid.display = false;
+    sourceChart.config.type = (mode === 'minute' || mode === 'hour') ? 'line' : 'bar';
 
-    if (mode === 'minute') { document.getElementById('sourceTimeLabel').innerText = "Live Source (Last 60 Minutes)"; updateSourceMinuteData(); }
-    else if (mode === 'hour') { document.getElementById('sourceHourSelectorWrapper').style.display = 'flex'; updateSourceHourData(); }
-    else if (mode === 'day') { document.getElementById('sourceDaySelectorWrapper').style.display = 'block'; updateSourceDayData(); } 
-    else if (mode === 'week') { document.getElementById('sourceWeekSubSelector').style.display = 'flex'; setSourceSubWeek(7, document.querySelectorAll('.source-pill')[3]); }
-    else if (mode === 'month') { document.getElementById('sourceMonthSelectorWrapper').style.display = 'block'; updateSourceMonthData(); }
-    else if (mode === 'year') {
+    if (mode === 'minute') { 
+        document.getElementById('sourceTimeLabel').innerText = "Live Real-Time Source"; 
+        document.getElementById('sourceAvgLabel').innerText = "Streaming from hardware...";
+        // 🚨 FIX: Instantly pull the latest real-time value!
+        document.getElementById('sourceTotalDisplay').innerText = Number(livePoleData[59]).toFixed(2) + " A";
+        
+        sourceChart.data.labels = liveTimeLabels;
+        sourceChart.data.datasets[0].data = livePoleData;
+        sourceChart.update();
+    } else if (mode === 'hour') {
+        document.getElementById('sourceTimeLabel').innerText = "Current Session (Last 60 ticks)"; 
+        document.getElementById('sourceAvgLabel').innerText = "Active Database Feed";
+        // 🚨 FIX: Instantly pull the latest real-time value!
+        document.getElementById('sourceTotalDisplay').innerText = Number(livePoleData[59]).toFixed(2) + " A";
+        
+        sourceChart.data.labels = liveTimeLabels;
+        sourceChart.data.datasets[0].data = livePoleData;
+        sourceChart.update();
+    } else if (mode === 'day') { 
+        document.getElementById('sourceDaySelectorWrapper').style.display = 'block'; 
+        updateSourceDayData(); 
+    } else if (mode === 'week') { 
+        document.getElementById('sourceWeekSubSelector').style.display = 'flex'; 
+        setSourceSubWeek(7, document.querySelectorAll('.source-pill')[3]); 
+    } else if (mode === 'month') { 
+        document.getElementById('sourceMonthSelectorWrapper').style.display = 'block'; 
+        updateSourceMonthData(); 
+    } else if (mode === 'year') {
         let labels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-        let data = Array.from({length: 12}, () => Math.random() * 105 + 50); // slightly higher for source
+        let data = Array.from({length: 12}, () => Math.random() * 55 + 100); 
         let total = data.reduce((a, b) => a + b, 0);
-        document.getElementById('sourceTimeLabel').innerText = "Year 2026";
+        document.getElementById('sourceTimeLabel').innerText = "Year 2026 (Demo Data)";
         document.getElementById('sourceTotalDisplay').innerText = total.toFixed(1) + " kWh";
         document.getElementById('sourceAvgLabel').innerText = "Total: 1.3 MWh";
         sourceChart.data.labels = labels; sourceChart.data.datasets[0].data = data; sourceChart.update();
@@ -423,7 +520,7 @@ function setSourceSubWeek(weekNum, element) {
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     let data = Array.from({length: 7}, () => Math.random() * 11 + weekNum);
     let total = data.reduce((a, b) => a + b, 0);
-    document.getElementById('sourceTimeLabel').innerText = weekNum === 7 ? "9 Feb - 15 Feb (Week 7)" : `Week ${weekNum}`;
+    document.getElementById('sourceTimeLabel').innerText = weekNum === 7 ? "Week 7 (Demo Data)" : `Week ${weekNum} (Demo Data)`;
     document.getElementById('sourceTotalDisplay').innerText = total.toFixed(1) + " kWh";
     document.getElementById('sourceAvgLabel').innerText = "Daily Avg: " + (total/7).toFixed(1) + " kWh";
     sourceChart.data.labels = days; sourceChart.data.datasets[0].data = data; sourceChart.update();
@@ -431,10 +528,10 @@ function setSourceSubWeek(weekNum, element) {
 
 function updateSourceDayData() {
     const dateStr = new Date(document.getElementById('sourceDaySelect').value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    let labels = Array.from({length: 24}, (_, i) => i < 10 ? "0" + i : i);
+    let labels = Array.from({length: 24}, (_, i) => i.toString());
     let data = Array.from({length: 24}, () => Math.random() * 2.8);
     let total = data.reduce((a, b) => a + b, 0);
-    document.getElementById('sourceTimeLabel').innerText = `Source on ${dateStr}`;
+    document.getElementById('sourceTimeLabel').innerText = `Source on ${dateStr} (Demo Data)`;
     document.getElementById('sourceTotalDisplay').innerText = total.toFixed(1) + " kWh";
     document.getElementById('sourceAvgLabel').innerText = "Peak: 8 PM";
     sourceChart.data.labels = labels; sourceChart.data.datasets[0].data = data; sourceChart.update();
@@ -445,40 +542,8 @@ function updateSourceMonthData() {
     let labels = Array.from({length: 30}, (_, i) => (i+1).toString());
     let data = Array.from({length: 30}, () => Math.random() * 11 + 2);
     let total = data.reduce((a, b) => a + b, 0);
-    document.getElementById('sourceTimeLabel').innerText = `Source for ${select.options[select.selectedIndex].text}`;
+    document.getElementById('sourceTimeLabel').innerText = `Source for ${select.options[select.selectedIndex].text} (Demo Data)`;
     document.getElementById('sourceTotalDisplay').innerText = total.toFixed(1) + " kWh";
     document.getElementById('sourceAvgLabel').innerText = "Daily Avg: " + (total/30).toFixed(1) + " kWh";
-    sourceChart.data.labels = labels; sourceChart.data.datasets[0].data = data; sourceChart.update();
-}
-
-function updateSourceMinuteData() {
-    let labels = [], data = [], now = new Date();
-    for(let i = 59; i >= 0; i--) {
-        let pastTime = new Date(now.getTime() - (i * 60000));
-        let mins = pastTime.getMinutes().toString().padStart(2, '0');
-        labels.push(mins === '00' ? `${pastTime.getHours() % 12 || 12}:00` : mins);
-        data.push(Math.random() * 1.2 + 0.6); 
-    }
-    document.getElementById('sourceTotalDisplay').innerText = data.reduce((a, b) => a + b, 0).toFixed(2) + " kWh";
-    document.getElementById('sourceAvgLabel').innerText = "Updating in real-time...";
-    
-    sourceChart.options.scales.x.grid.display = true;
-    sourceChart.options.scales.x.grid.drawOnChartArea = true;
-    sourceChart.options.scales.x.grid.color = (context) => (context.index !== undefined && labels[context.index].includes(':00')) ? 'rgba(255, 255, 255, 0.4)' : 'transparent';
-    sourceChart.options.scales.x.grid.borderDash = [5, 5]; 
-    
-    sourceChart.data.labels = labels; sourceChart.data.datasets[0].data = data; sourceChart.update();
-}
-
-function updateSourceHourData() {
-    const dateStr = new Date(document.getElementById('sourceHourDateSelect').value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    let h = parseInt(document.getElementById('sourceHourTimeSelect').value);
-    let displayHour = h % 12 || 12, ampm = h >= 12 ? 'PM' : 'AM';
-    let labels = Array.from({length: 60}, (_, i) => i.toString().padStart(2, '0'));
-    let data = Array.from({length: 60}, () => Math.random() * 1.8);
-    
-    document.getElementById('sourceTimeLabel').innerText = `Source on ${dateStr} (${displayHour}:00 ${ampm} - ${displayHour}:59 ${ampm})`;
-    document.getElementById('sourceTotalDisplay').innerText = data.reduce((a, b) => a + b, 0).toFixed(2) + " kWh";
-    document.getElementById('sourceAvgLabel').innerText = "Hourly Total";
     sourceChart.data.labels = labels; sourceChart.data.datasets[0].data = data; sourceChart.update();
 }

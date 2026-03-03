@@ -23,6 +23,14 @@
         .scroll-indicator {
             animation: subtleBounce 2s infinite;
         }
+        
+        /* Toggle Switch CSS */
+        .switch { position: relative; display: inline-block; width: 60px; height: 34px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #4CAF50; transition: .4s; border-radius: 34px; }
+        .slider:before { position: absolute; content: ""; height: 26px; width: 26px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #ff3b30; }
+        input:checked + .slider:before { transform: translateX(26px); }
     </style>
 </head>
 <body>
@@ -31,6 +39,7 @@
         <div class="nav-left">
             <i class="bi bi-lightning-charge-fill brand-logo"></i>
             <a class="nav-link-custom active" onclick="showPage('dashboard')" id="nav-dash">Dashboard</a>
+            <a class="nav-link-custom" onclick="showPage('control')" id="nav-control">Control</a>
             <a class="nav-link-custom" onclick="showPage('cost')" id="nav-cost">Cost</a>
             <a class="nav-link-custom" id="nav-pair" data-bs-toggle="modal" data-bs-target="#pairingModal" style="display: none; cursor: pointer;">Pair Device</a>
             <a class="nav-link-custom" data-bs-toggle="modal" data-bs-target="#helpModal" style="cursor: pointer;">Help</a>
@@ -66,40 +75,36 @@
         <div class="card-custom mb-4">
             <h5 class="fw-bold mb-3 text-white"><i class="bi bi-house-fill text-primary me-2"></i>Load Usage (House)</h5>
             <div class="view-tabs mb-3">
-                <div class="view-tab" onclick="setView('minute', this)">Live</div>
+                <div class="view-tab active" onclick="setView('minute', this)">Live</div>
                 <div class="view-tab" onclick="setView('hour', this)">Hour</div>
                 <div class="view-tab" onclick="setView('day', this)">Day</div>
-                <div class="view-tab active" onclick="setView('week', this)">Week</div>
+                <div class="view-tab" onclick="setView('week', this)">Week</div>
                 <div class="view-tab" onclick="setView('month', this)">Month</div>
                 <div class="view-tab" onclick="setView('year', this)">Year</div>
             </div>
 
-            <div id="hourSelectorWrapper" class="selector-wrapper" style="display: none; gap: 10px;">
-                <input type="date" id="hourDateSelect" class="custom-select" onchange="updateHourData()">
-                <select id="hourTimeSelect" class="custom-select" onchange="updateHourData()"></select>
-            </div>
-            <div id="monthSelectorWrapper" class="selector-wrapper" style="display: none;">
-                <select id="monthSelect" class="custom-select" onchange="updateMonthData()">
-                    <option value="Feb" selected>February</option>
-                    <option value="Mar">March</option>
-                </select>
-            </div>
-            <div id="daySelectorWrapper" class="selector-wrapper" style="display: none;">
+            <div id="daySelectorWrapper" class="selector-wrapper" style="display: none; margin-bottom: 15px;">
                 <input type="date" id="daySelect" class="custom-select" onchange="updateDayData()">
             </div>
-            <div class="sub-selector-container mb-3" id="weekSubSelector" style="display: flex; gap: 10px;">
+            <div class="sub-selector-container mb-3" id="weekSubSelector" style="display: none; gap: 10px;">
                 <div class="sub-pill" onclick="setSubWeek(4, this)">W4</div>
                 <div class="sub-pill" onclick="setSubWeek(5, this)">W5</div>
                 <div class="sub-pill" onclick="setSubWeek(6, this)">W6</div>
                 <div class="sub-pill active" onclick="setSubWeek(7, this)">W7</div>
             </div>
+            <div id="monthSelectorWrapper" class="selector-wrapper" style="display: none; margin-bottom: 15px;">
+                <select id="monthSelect" class="custom-select" onchange="updateMonthData()">
+                    <option value="Feb" selected>February</option>
+                    <option value="Mar">March</option>
+                </select>
+            </div>
 
             <div class="mb-4">
-                <h6 class="sub-label mb-1" id="timeLabel">9 February - 15 February (Week 7)</h6>
+                <h6 class="sub-label mb-1" id="timeLabel">Live Real-Time Usage</h6>
                 <div class="d-flex align-items-baseline">
-                    <h1 class="big-value" id="totalUsageDisplay">-- kWh</h1>
+                    <h1 class="big-value" id="totalUsageDisplay">0.00 A</h1>
                 </div>
-                <div class="sub-label" id="avgLabel">Loading...</div>
+                <div class="sub-label" id="avgLabel">Streaming from hardware...</div>
             </div>
 
             <div style="height: 300px; width: 100%;">
@@ -111,14 +116,14 @@
             <div class="col-6">
                 <div class="card-custom text-center p-3">
                     <i class="bi bi-lightning-charge-fill" style="color: #ffcc00; font-size: 20px;"></i>
-                    <div class="mt-2" style="font-size: 20px; font-weight: 700;" id="poleCurrent">0.0 A</div>
+                    <div class="mt-2" style="font-size: 20px; font-weight: 700;" id="poleCurrent">0.00 A</div>
                     <div class="sub-label">Source</div>
                 </div>
             </div>
             <div class="col-6">
                 <div class="card-custom text-center p-3">
                     <i class="bi bi-house-fill" style="color: var(--primary-blue); font-size: 20px;"></i>
-                    <div class="mt-2" style="font-size: 20px; font-weight: 700;" id="houseCurrent">0.0 A</div>
+                    <div class="mt-2" style="font-size: 20px; font-weight: 700;" id="houseCurrent">0.00 A</div>
                     <div class="sub-label">Load</div>
                 </div>
             </div>
@@ -134,40 +139,36 @@
         <div class="card-custom mb-4" id="sourceChartSection">
             <h5 class="fw-bold mb-3 text-white"><i class="bi bi-lightning-charge-fill text-warning me-2"></i>Source Power (Grid)</h5>
             <div class="view-tabs mb-3">
-                <div class="view-tab source-tab" onclick="setSourceView('minute', this)">Live</div>
+                <div class="view-tab source-tab active" onclick="setSourceView('minute', this)">Live</div>
                 <div class="view-tab source-tab" onclick="setSourceView('hour', this)">Hour</div>
                 <div class="view-tab source-tab" onclick="setSourceView('day', this)">Day</div>
-                <div class="view-tab source-tab active" onclick="setSourceView('week', this)">Week</div>
+                <div class="view-tab source-tab" onclick="setSourceView('week', this)">Week</div>
                 <div class="view-tab source-tab" onclick="setSourceView('month', this)">Month</div>
                 <div class="view-tab source-tab" onclick="setSourceView('year', this)">Year</div>
             </div>
 
-            <div id="sourceHourSelectorWrapper" class="selector-wrapper" style="display: none; gap: 10px;">
-                <input type="date" id="sourceHourDateSelect" class="custom-select" onchange="updateSourceHourData()">
-                <select id="sourceHourTimeSelect" class="custom-select" onchange="updateSourceHourData()"></select>
-            </div>
-            <div id="sourceMonthSelectorWrapper" class="selector-wrapper" style="display: none;">
-                <select id="sourceMonthSelect" class="custom-select" onchange="updateSourceMonthData()">
-                    <option value="Feb" selected>February</option>
-                    <option value="Mar">March</option>
-                </select>
-            </div>
-            <div id="sourceDaySelectorWrapper" class="selector-wrapper" style="display: none;">
+            <div id="sourceDaySelectorWrapper" class="selector-wrapper" style="display: none; margin-bottom: 15px;">
                 <input type="date" id="sourceDaySelect" class="custom-select" onchange="updateSourceDayData()">
             </div>
-            <div class="sub-selector-container mb-3" id="sourceWeekSubSelector" style="display: flex; gap: 10px;">
+            <div class="sub-selector-container mb-3" id="sourceWeekSubSelector" style="display: none; gap: 10px;">
                 <div class="sub-pill source-pill" onclick="setSourceSubWeek(4, this)">W4</div>
                 <div class="sub-pill source-pill" onclick="setSourceSubWeek(5, this)">W5</div>
                 <div class="sub-pill source-pill" onclick="setSourceSubWeek(6, this)">W6</div>
                 <div class="sub-pill source-pill active" onclick="setSourceSubWeek(7, this)">W7</div>
             </div>
+            <div id="sourceMonthSelectorWrapper" class="selector-wrapper" style="display: none; margin-bottom: 15px;">
+                <select id="sourceMonthSelect" class="custom-select" onchange="updateSourceMonthData()">
+                    <option value="Feb" selected>February</option>
+                    <option value="Mar">March</option>
+                </select>
+            </div>
 
             <div class="mb-4">
-                <h6 class="sub-label mb-1" id="sourceTimeLabel">9 February - 15 February (Week 7)</h6>
+                <h6 class="sub-label mb-1" id="sourceTimeLabel">Live Real-Time Source</h6>
                 <div class="d-flex align-items-baseline">
-                    <h1 class="big-value" id="sourceTotalDisplay" style="color: #ffcc00;">-- kWh</h1>
+                    <h1 class="big-value" id="sourceTotalDisplay" style="color: #ffcc00;">0.00 A</h1>
                 </div>
-                <div class="sub-label" id="sourceAvgLabel">Loading...</div>
+                <div class="sub-label" id="sourceAvgLabel">Streaming from hardware...</div>
             </div>
 
             <div style="height: 300px; width: 100%;">
@@ -175,6 +176,20 @@
             </div>
         </div>
 
+    </div>
+
+    <div id="controlPage" class="container" style="display: none;">
+        <div class="card-custom text-center mt-5" style="border: 1px solid #444; max-width: 500px; margin: 0 auto; padding: 50px 20px;">
+            <h4 class="fw-bold mb-4 text-white"><i class="bi bi-power text-danger me-2"></i>Hardware Override</h4>
+            <div class="d-flex justify-content-center align-items-center flex-column">
+                <label class="switch" style="transform: scale(1.5); margin: 20px 0;">
+                    <input type="checkbox" id="relayToggle">
+                    <span class="slider" id="relaySlider"></span>
+                </label>
+                <div id="relayStatusText" class="mt-4 fw-bold" style="color: #4CAF50; font-size: 1.5rem;">Power is ON</div>
+                <p class="text-white-50 mt-3" style="font-size: 14px;">Toggle this switch to remotely disconnect grid power from the load. Ensure your ESP32 is paired to execute commands.</p>
+            </div>
+        </div>
     </div>
 
     <div id="costPage" class="container" style="display: none;">
@@ -267,27 +282,22 @@
 
                     <div class="mb-4">
                         <h6 class="fw-bold" style="color: #ff3b30;"><i class="bi bi-exclamation-triangle-fill me-2"></i>1. How Theft Detection Works</h6>
-                        <p class="text-white-50" style="font-size: 14px;">The system constantly compares the <strong>Source</strong> (power entering the grid) with the <strong>Load</strong> (power legitimately consumed by the house). If Source > Load by more than <strong>1.0A</strong>, a Critical Red Alert banner triggers instantly, indicating a potential bypass or physical line tap.</p>
+                        <p class="text-white-50" style="font-size: 14px;">The system constantly compares the <strong>Source</strong> (power entering the grid) with the <strong>Load</strong> (power legitimately consumed by the house). If Source > Load by more than <strong>0.2A</strong>, a Critical Red Alert banner triggers instantly, indicating a potential bypass or physical line tap.</p>
                     </div>
 
                     <div class="mb-4">
                         <h6 class="fw-bold text-info"><i class="bi bi-graph-up me-2"></i>2. Dual Analytics (Load vs. Source)</h6>
-                        <p class="text-white-50" style="font-size: 14px;">The dashboard features two independent charts. The top blue chart maps your <strong>House Load</strong>, while the bottom yellow chart maps the <strong>Grid Source</strong>. Scroll down to compare the two.</p>
-                        <ul class="text-white-50" style="font-size: 14px;">
-                            <li><strong>Live:</strong> Real-time minute-by-minute stream directly from your hardware.</li>
-                            <li><strong>Hour:</strong> Zoom into a specific 60-minute window for granular analysis.</li>
-                            <li><strong>Day/Week/Month/Year:</strong> View historical aggregated data.</li>
-                        </ul>
+                        <p class="text-white-50" style="font-size: 14px;">The dashboard features two independent charts. The top blue chart maps your <strong>House Load</strong>, while the bottom yellow chart maps the <strong>Grid Source</strong>.</p>
                     </div>
 
                     <div class="mb-4">
                         <h6 class="fw-bold text-success"><i class="bi bi-wallet2 me-2"></i>3. Cost & Budgeting</h6>
-                        <p class="text-white-50" style="font-size: 14px;">Navigate to the <strong>Cost</strong> tab to view your estimated monthly bill. Total Cost is calculated as: <em>Units Consumed (kWh) × Rate per Unit (₹)</em>. You can adjust the unit rate dynamically to match your local utility pricing.</p>
+                        <p class="text-white-50" style="font-size: 14px;">Navigate to the <strong>Cost</strong> tab to view your estimated monthly bill.</p>
                     </div>
 
                     <div class="mb-0">
                         <h6 class="fw-bold text-white"><i class="bi bi-gear-fill me-2"></i>4. Hardware & Settings</h6>
-                        <p class="text-white-50 mb-0" style="font-size: 14px;">Click <strong>Pair Device</strong> in the top navigation bar to link your ESP32 MAC address. Use the gear icon next to your username to manage your account settings, including username changes and password resets.</p>
+                        <p class="text-white-50 mb-0" style="font-size: 14px;">Click <strong>Pair Device</strong> to link your ESP32. Navigate to the <strong>Control</strong> tab to physically disconnect the load relay.</p>
                     </div>
                 </div>
                 <div class="modal-footer border-secondary">
