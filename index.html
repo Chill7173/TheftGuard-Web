@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TheftGuard V18 (Final Build)</title>
+    
+    <meta name="theme-color" content="#000000">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    
+    <link rel="manifest" href="manifest.json">
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    
+    <link rel="stylesheet" href="style.css">
+    
+    <style>
+        @keyframes subtleBounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(5px); }
+        }
+        .scroll-indicator {
+            animation: subtleBounce 2s infinite;
+        }
+        
+        /* Toggle Switch CSS */
+        .switch { position: relative; display: inline-block; width: 60px; height: 34px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #4CAF50; transition: .4s; border-radius: 34px; }
+        .slider:before { position: absolute; content: ""; height: 26px; width: 26px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #ff3b30; }
+        input:checked + .slider:before { transform: translateX(26px); }
+    </style>
+</head>
+<body>
+
+    <nav class="navbar fixed-top custom-navbar">
+        <div class="nav-left">
+            <i class="bi bi-lightning-charge-fill brand-logo"></i>
+            <button class="navbar-toggle" id="navbarToggle" onclick="toggleMobileMenu()">
+                <i class="bi bi-list"></i>
+            </button>
+            <div class="nav-links-desktop">
+                <a class="nav-link-custom active" onclick="showPage('dashboard')" id="nav-dash">Dashboard</a>
+                <a class="nav-link-custom" onclick="showPage('control')" id="nav-control">Control</a>
+                <a class="nav-link-custom" onclick="showPage('automation')" id="nav-automation">Rules</a>
+                <a class="nav-link-custom" onclick="showPage('cost')" id="nav-cost">Cost</a>
+                <a class="nav-link-custom" onclick="showPage('analytics')" id="nav-analytics">Analytics</a>
+                <a class="nav-link-custom" onclick="showPage('dataset')" id="nav-dataset">Dataset</a>
+                <a class="nav-link-custom" id="nav-pair" data-bs-toggle="modal" data-bs-target="#pairingModal" style="display: none; cursor: pointer;">Pair Device</a>
+                <a class="nav-link-custom" data-bs-toggle="modal" data-bs-target="#helpModal" style="cursor: pointer;">Help</a>
+            </div>
+        </div>
+        <div class="nav-center">
+            <div class="center-title">Energy Monitoring Device</div>
+            <div class="center-subtitle">Real-Time Grid Analysis</div>
+        </div>
+        <div class="nav-right">
+            <button class="btn-login" id="loginBtn" onclick="navigateToLogin()">Log in</button>
+            
+            <div id="userProfile" style="display: none; align-items: center; gap: 15px;">
+                <div class="device-status-indicator" id="deviceStatus" title="Device Status">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span class="status-text" id="statusText">Offline</span>
+                </div>
+                <button class="btn-icon-nav" onclick="toggleNotificationCenter()" title="Notifications" id="notificationBtn">
+                    <i class="bi bi-bell-fill"></i>
+                    <span class="badge" id="notificationBadge" style="display: none;">0</span>
+                </button>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span id="userNameDisplay" style="font-size: 13px; font-weight: 600;">ADMIN</span>
+                    <div style="width: 30px; height: 30px; background: #333; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                        <i class="bi bi-person-fill" style="color: #fff;"></i>
+                    </div>
+                </div>
+                <button onclick="showPage('settings')" class="btn btn-sm btn-link text-white p-0" style="font-size: 18px;" title="Settings">
+                    <i class="bi bi-gear-fill"></i>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Mobile Menu -->
+    <div id="mobileMenu" class="mobile-menu" style="display: none;">
+        <a class="mobile-menu-item" onclick="showPage('dashboard'); toggleMobileMenu()" id="mobile-nav-dash">Dashboard</a>
+        <a class="mobile-menu-item" onclick="showPage('control'); toggleMobileMenu()" id="mobile-nav-control">Control</a>
+        <a class="mobile-menu-item" onclick="showPage('automation'); toggleMobileMenu()" id="mobile-nav-automation">Rules</a>
+        <a class="mobile-menu-item" onclick="showPage('cost'); toggleMobileMenu()" id="mobile-nav-cost">Cost</a>
+        <a class="mobile-menu-item" onclick="showPage('analytics'); toggleMobileMenu()" id="mobile-nav-analytics">Analytics</a>
+        <a class="mobile-menu-item" onclick="showPage('dataset'); toggleMobileMenu()" id="mobile-nav-dataset">Dataset</a>
+        <a class="mobile-menu-item" id="mobile-nav-pair" data-bs-toggle="modal" data-bs-target="#pairingModal" onclick="toggleMobileMenu()" style="display: none;">Pair Device</a>
+        <a class="mobile-menu-item" data-bs-toggle="modal" data-bs-target="#helpModal" onclick="toggleMobileMenu()">Help</a>
+    </div>
+
+    <!-- Toast Notifications Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Notification Center Panel -->
+    <div id="notificationCenter" class="notification-center" style="display: none;">
+        <div class="notification-header">
+            <h5>Notifications</h5>
+            <button class="btn-close-notification" onclick="toggleNotificationCenter()">×</button>
+        </div>
+        <div class="notification-body">
+            <div id="notificationList" class="notification-list">
+                <div class="notification-empty">No notifications yet</div>
+            </div>
+        </div>
+        <div class="notification-footer">
+            <button class="btn btn-sm btn-outline-light w-100" onclick="clearAllNotifications()">Clear All</button>
+        </div>
+    </div>
+
+    <!-- Landing Page (shown only for unauthenticated users) -->
+    <div id="landingPage" class="landing-page-container">
+        <div class="landing-content">
+            <i class="bi bi-lightning-charge-fill landing-logo"></i>
+            <h1 class="landing-title">TheftGuard</h1>
+            <p class="landing-subtitle">Real-Time Energy Monitoring & Theft Detection</p>
+            <button class="btn-landing-login" onclick="navigateToLogin()">
+                <span>Log In</span>
+                <i class="bi bi-arrow-right ms-2"></i>
+            </button>
+            <p class="landing-footer">Secure intelligent grid analysis powered by IoT</p>
+        </div>
+    </div>
+
+    <!-- Login Page -->
+    <div id="loginPage" class="login-page-container" style="display: none;">
+        <div class="login-wrapper">
+            <div class="login-box">
+                <div class="login-header">
+                    <i class="bi bi-lightning-charge-fill landing-logo" style="font-size: 50px; margin-bottom: 20px;"></i>
+                    <h2 class="login-title">TheftGuard</h2>
+                    <p class="login-subtitle" id="formTypeLabel">Sign In to Your Account</p>
+                </div>
+
+                <!-- Login Form -->
+                <form id="loginForm" style="display: block;">
+                    <div class="login-input-group mb-3">
+                        <label class="login-label">Email Address</label>
+                        <input type="email" id="loginEmail" class="login-input" placeholder="admin@theftguard.com" required>
+                    </div>
+                    <div class="login-input-group mb-2">
+                        <label class="login-label">Password</label>
+                        <input type="password" id="loginPassword" class="login-input" placeholder="Enter your password" required>
+                    </div>
+                    <div class="text-end mb-4">
+                        <a href="#" onclick="handleForgotPassword()" class="forgot-link">Forgot Password?</a>
+                    </div>
+                    <button type="button" onclick="handleLogin(event)" id="loginSubmitBtn" class="login-btn-primary w-100 mb-3">Sign In</button>
+                    <div class="login-divider">
+                        <span>or</span>
+                    </div>
+                    <p class="login-toggle-text">
+                        Don't have an account? <a href="#" onclick="toggleForm()">Create one</a>
+                    </p>
+                </form>
+
+                <!-- Register Form -->
+                <form id="registerForm" style="display: none;">
+                    <div class="login-input-group mb-3">
+                        <label class="login-label">Email Address</label>
+                        <input type="email" id="registerEmail" class="login-input" placeholder="admin@theftguard.com" required>
+                    </div>
+                    <div class="login-input-group mb-3">
+                        <label class="login-label">Password</label>
+                        <input type="password" id="registerPassword" class="login-input" placeholder="At least 6 characters" required>
+                    </div>
+                    <div class="login-input-group mb-4">
+                        <label class="login-label">Confirm Password</label>
+                        <input type="password" id="registerPasswordConfirm" class="login-input" placeholder="Confirm password" required>
+                    </div>
+                    <button type="button" onclick="handleRegister(event)" id="registerBtn" class="login-btn-primary w-100 mb-3">Create Account</button>
+                    <div class="login-divider">
+                        <span>or</span>
+                    </div>
+                    <p class="login-toggle-text">
+                        Already have an account? <a href="#" onclick="toggleForm()">Sign in</a>
+                    </p>
+                </form>
+            </div>
+            <div class="login-footer-text">
+                Secure intelligent grid analysis powered by IoT
+            </div>
+        </div>
+    </div>
+
+    <div id="dashboardPage" class="container">
+        
+        <div id="theftAlertBanner" style="display: none; background-color: var(--danger-red); color: white; padding: 10px; text-align: center; border-radius: 8px; margin-bottom: 20px; font-weight: bold; animation: pulse 2s infinite;">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            CRITICAL ALERT: THEFT DETECTED
+        </div>
+
+        <div class="card-custom mb-4">
+            <h5 class="fw-bold mb-3 text-white"><i class="bi bi-house-fill text-primary me-2"></i>Load Usage (House)</h5>
+            <div class="view-tabs mb-3">
+                <div class="view-tab active" onclick="setView('minute', this)">Live</div>
+                <div class="view-tab" onclick="setView('hour', this)">Hour</div>
+                <div class="view-tab" onclick="setView('day', this)">Day</div>
+                <div class="view-tab" onclick="setView('week', this)">Week</div>
+                <div class="view-tab" onclick="setView('month', this)">Month</div>
+                <div class="view-tab" onclick="setView('year', this)">Year</div>
+            </div>
+
+            <div id="daySelectorWrapper" class="selector-wrapper" style="display: none; margin-bottom: 15px;">
+                <input type="date" id="daySelect" class="custom-select" onchange="updateDayData()">
+            </div>
+            <div class="sub-selector-container mb-3" id="weekSubSelector" style="display: none; gap: 10px;">
+                <div class="sub-pill" onclick="setSubWeek(4, this)">W4</div>
+                <div class="sub-pill" onclick="setSubWeek(5, this)">W5</div>
+                <div class="sub-pill" onclick="setSubWeek(6, this)">W6</div>
+                <div class="sub-pill active" onclick="setSubWeek(7, this)">W7</div>
+            </div>
+            <div id="monthSelectorWrapper" class="selector-wrapper" style="display: none; margin-bottom: 15px;">
+                <select id="monthSelect" class="custom-select" onchange="updateMonthData()">
+                    <option value="Feb" selected>February</option>
+                    <option value="Mar">March</option>
+                </select>
+            </div>
+
+            <div class="mb-4">
+                <h6 class="sub-label mb-1" id="timeLabel">Live Real-Time Usage</h6>
+                <div class="d-flex align-items-baseline">
+                    <h1 class="big-value" id="totalUsageDisplay">0.00 A</h1>
+                </div>
+                <div class="sub-label" id="avgLabel">Streaming from hardware...</div>
+            </div>
+
+            <div style="height: 300px; width: 100%;">
+                <canvas id="usageChart"></canvas>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+            <div class="col-6">
+                <div class="card-custom text-center p-3">
+                    <i class="bi bi-lightning-charge-fill" style="color: #ffcc00; font-size: 20px;"></i>
+                    <div class="mt-2" style="font-size: 20px; font-weight: 700;" id="poleCurrent">0.00 A</div>
+                    <div class="sub-label">Source</div>
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="card-custom text-center p-3">
+                    <i class="bi bi-house-fill" style="color: var(--primary-blue); font-size: 20px;"></i>
+                    <div class="mt-2" style="font-size: 20px; font-weight: 700;" id="houseCurrent">0.00 A</div>
+                    <div class="sub-label">Load</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-center mb-4 scroll-indicator">
+            <a href="#sourceChartSection" class="text-white-50 text-decoration-none d-flex flex-column align-items-center" style="font-size: 13px; transition: 0.3s; opacity: 0.7;">
+                <span class="mb-1">Compare Source Power Below</span>
+                <i class="bi bi-chevron-compact-down" style="font-size: 20px;"></i>
+            </a>
+        </div>
+
+        <div class="card-custom mb-4" id="sourceChartSection">
+            <h5 class="fw-bold mb-3 text-white"><i class="bi bi-lightning-charge-fill text-warning me-2"></i>Source Power (Grid)</h5>
+            <div class="view-tabs mb-3">
+                <div class="view-tab source-tab active" onclick="setSourceView('minute', this)">Live</div>
+                <div class="view-tab source-tab" onclick="setSourceView('hour', this)">Hour</div>
+                <div class="view-tab source-tab" onclick="setSourceView('day', this)">Day</div>
+                <div class="view-tab source-tab" onclick="setSourceView('week', this)">Week</div>
+                <div class="view-tab source-tab" onclick="setSourceView('month', this)">Month</div>
+                <div class="view-tab source-tab" onclick="setSourceView('year', this)">Year</div>
+            </div>
+
+            <div id="sourceDaySelectorWrapper" class="selector-wrapper" style="display: none; margin-bottom: 15px;">
+                <input type="date" id="sourceDaySelect" class="custom-select" onchange="updateSourceDayData()">
+            </div>
+            <div class="sub-selector-container mb-3" id="sourceWeekSubSelector" style="display: none; gap: 10px;">
+                <div class="sub-pill source-pill" onclick="setSourceSubWeek(4, this)">W4</div>
+                <div class="sub-pill source-pill" onclick="setSourceSubWeek(5, this)">W5</div>
+                <div class="sub-pill source-pill" onclick="setSourceSubWeek(6, this)">W6</div>
+                <div class="sub-pill source-pill active" onclick="setSourceSubWeek(7, this)">W7</div>
+            </div>
+            <div id="sourceMonthSelectorWrapper" class="selector-wrapper" style="display: none; margin-bottom: 15px;">
+                <select id="sourceMonthSelect" class="custom-select" onchange="updateSourceMonthData()">
+                    <option value="Feb" selected>February</option>
+                    <option value="Mar">March</option>
+                </select>
+            </div>
+
+            <div class="mb-4">
+                <h6 class="sub-label mb-1" id="sourceTimeLabel">Live Real-Time Source</h6>
+                <div class="d-flex align-items-baseline">
+                    <h1 class="big-value" id="sourceTotalDisplay" style="color: #ffcc00;">0.00 A</h1>
+                </div>
+                <div class="sub-label" id="sourceAvgLabel">Streaming from hardware...</div>
+            </div>
+
+            <div style="height: 300px; width: 100%;">
+                <canvas id="sourceChart"></canvas>
+            </div>
+        </div>
+
+    </div>
+
+    <div id="controlPage" class="container" style="display: none;">
+        <div class="card-custom text-center mt-5" style="border: 1px solid #444; max-width: 500px; margin: 0 auto; padding: 50px 20px;">
+            <h4 class="fw-bold mb-4 text-white"><i class="bi bi-power text-danger me-2"></i>Hardware Override</h4>
+            <div class="d-flex justify-content-center align-items-center flex-column">
+                <label class="switch" style="transform: scale(1.5); margin: 20px 0;">
+                    <input type="checkbox" id="relayToggle">
+                    <span class="slider" id="relaySlider"></span>
+                </label>
+                <div id="relayStatusText" class="mt-4 fw-bold" style="color: #4CAF50; font-size: 1.5rem;">Power is ON</div>
+                <p class="text-white-50 mt-3" style="font-size: 14px;">Toggle this switch to remotely disconnect grid power from the load. Ensure your ESP32 is paired to execute commands.</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="costPage" class="container" style="display: none;">
+        <div class="card-custom mb-4">
+            <h6 class="sub-label text-uppercase mb-2">Current Month Bill</h6>
+            <div class="d-flex align-items-end">
+                <h1 class="big-value text-success" style="font-size: 42px;">₹ 1,425.50</h1>
+                <span class="sub-label ms-2 mb-2">Estimated</span>
+            </div>
+            <div class="mt-3">
+                <div class="progress" style="height: 6px; background: #333;">
+                    <div class="progress-bar bg-success" role="progressbar" style="width: 65%;"></div>
+                </div>
+                <div class="d-flex justify-content-between mt-2">
+                    <small class="text-muted">Consumed: 190 kWh</small>
+                    <small class="text-muted">Budget: ₹ 2,200</small>
+                </div>
+            </div>
+        </div>
+        <div class="card-custom mb-4">
+            <h6 class="sub-label mb-3 fw-bold text-white">Cost Breakdown</h6>
+            <div class="cost-row d-flex justify-content-between mb-2">
+                <span class="text-white-50">Total Units (kWh)</span>
+                <span class="fw-bold text-white">190.2</span>
+            </div>
+            <div class="cost-row d-flex justify-content-between mb-2">
+                <span class="text-white-50">Rate per Unit (₹)</span>
+                <input type="number" class="cost-input form-control w-25 bg-dark text-white border-secondary text-end" value="7.50" id="unitRate" onchange="calculateCost()">
+            </div>
+            <div class="cost-row d-flex justify-content-between border-top mt-2 pt-2" style="border-color: #444;">
+                <span class="text-white fw-bold">Total Estimated Cost</span>
+                <span class="text-success fw-bold" id="calculatedTotal">₹ 1,426.50</span>
+            </div>
+        </div>
+        <div class="card-custom">
+            <h6 class="sub-label mb-3">6-Month Cost Trend</h6>
+            <div style="height: 200px; width: 100%;">
+                <canvas id="costChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div id="datasetPage" class="container" style="display: none;">
+        <div class="card-custom mb-4">
+            <h5 class="fw-bold mb-3 text-white">Dataset Visualizer</h5>
+            <div style="display: flex; gap: 2px; margin-bottom: 12px; flex-wrap: wrap;">
+                <button class="btn btn-sm btn-primary" onclick="loadLiveDeviceData()">Load Live Device Data</button>
+                <button class="btn btn-sm btn-secondary" onclick="loadSampleDataset()">Load Sample Data</button>
+                <button class="btn btn-sm btn-secondary" onclick="toggleCustomInput()">Load Custom JSON</button>
+            </div>
+            <div id="customInputSection" style="display: none; margin-bottom: 12px;">
+                <textarea id="dataInput" class="form-control" rows="6" placeholder="Paste JSON array of objects here"></textarea>
+                <button class="btn btn-primary mt-2" onclick="loadDataset()">Load Custom Data</button>
+            </div>
+            <div id="loadingMessage" class="text-white-50" style="display: none; font-size: 14px;">Loading sample data...</div>
+        </div>
+        <div id="datasetControls" style="display: none;">
+            <div class="row g-3 mb-3">
+                <div class="col-3">
+                    <div class="card-custom text-center p-3">
+                        <div>Entries</div>
+                        <div id="dsEntries" class="big-value">0</div>
+                    </div>
+                </div>
+                <div class="col-3">
+                    <div class="card-custom text-center p-3">
+                        <div>Fields</div>
+                        <div id="dsFields" class="big-value">0</div>
+                    </div>
+                </div>
+                <div class="col-3">
+                    <div class="card-custom text-center p-3">
+                        <div>Duplicates</div>
+                        <div id="dsDuplicates" class="big-value">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-custom mb-4">
+                <h6 class="fw-bold text-white">Filters & Selection</h6>
+                <div id="dateFieldWrapper" class="mb-2" style="display: none;">
+                    <label class="sub-label">Date field</label>
+                    <select id="dateFieldSelect" class="custom-select" onchange="setupDateFilter()"></select>
+                </div>
+                <div id="dateFilter" class="mb-3" style="display: none;">
+                    <label class="sub-label">Date range</label>
+                    <div class="d-flex gap-2">
+                        <input type="date" id="dsStart" class="custom-select" onchange="applyDateFilter()">
+                        <input type="date" id="dsEnd" class="custom-select" onchange="applyDateFilter()">
+                    </div>
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="sub-label">Numeric fields</label>
+                        <select id="numericFieldSelect" multiple class="custom-select" onchange="updateDatasetChart()"></select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="sub-label">Categorical fields</label>
+                        <select id="catFieldSelect" multiple class="custom-select" onchange="updateDatasetChart()"></select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-custom mb-4">
+                <canvas id="datasetChart"></canvas>
+            </div>
+            <button class="btn btn-secondary" onclick="exportDatasetSummary()">Export Summary CSV</button>
+        </div>
+    </div>
+
+    <div id="settingsPage" class="container" style="display: none;">
+        <div class="card-custom mb-4">
+            <h6 class="sub-label mb-3 fw-bold text-white"><i class="bi bi-sliders me-2"></i>Preferences</h6>
+            <div class="settings-row mb-3">
+                <div class="settings-label">Energy Unit</div>
+                <select id="unitSelect" class="custom-select">
+                    <option value="A">Ampere (A)</option>
+                    <option value="W">Watt (W)</option>
+                    <option value="kW">Kilowatt (kW)</option>
+                </select>
+            </div>
+            <div class="settings-row">
+                <div class="settings-label">Refresh Rate</div>
+                <select id="refreshSelect" class="custom-select">
+                    <option value="5">Every 5 seconds</option>
+                    <option value="10">Every 10 seconds</option>
+                    <option value="30">Every 30 seconds</option>
+                    <option value="60">Every 1 minute</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="card-custom mb-4">
+            <h6 class="sub-label mb-3 fw-bold text-white"><i class="bi bi-bell-fill me-2"></i>Notification Settings</h6>
+            <div class="settings-row mb-3">
+                <label class="settings-checkbox">
+                    <input type="checkbox" id="alertTheft" checked>
+                    <span>Theft Detection Alerts</span>
+                </label>
+            </div>
+            <div class="settings-row mb-3">
+                <label class="settings-checkbox">
+                    <input type="checkbox" id="alertAnomalies" checked>
+                    <span>Anomaly Alerts</span>
+                </label>
+            </div>
+            <div class="settings-row">
+                <label class="settings-checkbox">
+                    <input type="checkbox" id="alertSummaryEmail">
+                    <span>Daily Summary Email</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="card-custom mb-4">
+            <h6 class="sub-label mb-3 fw-bold text-white"><i class="bi bi-envelope-fill me-2"></i>Email Reports (Phase 3)</h6>
+            <div class="settings-row mb-3">
+                <label class="settings-checkbox">
+                    <input type="checkbox" id="emailDailyReport" checked>
+                    <span>Daily Usage Report</span>
+                </label>
+            </div>
+            <div class="settings-row mb-3">
+                <label class="settings-checkbox">
+                    <input type="checkbox" id="emailWeeklyReport">
+                    <span>Weekly Summary Report</span>
+                </label>
+            </div>
+            <div class="settings-row mb-3">
+                <label class="settings-checkbox">
+                    <input type="checkbox" id="emailMonthlyReport">
+                    <span>Monthly Bill Report</span>
+                </label>
+            </div>
+            <div class="settings-row">
+                <label class="settings-checkbox">
+                    <input type="checkbox" id="emailAnomalyAlerts" checked>
+                    <span>Immediate Anomaly Alerts</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="card-custom mb-4">
+            <h6 class="sub-label mb-3 fw-bold text-white"><i class="bi bi-person-badge-fill me-2"></i>Account Settings</h6>
+            <div class="d-flex gap-2 mb-3">
+                <input type="text" id="newUsernameInput" class="form-control" style="background: #2c2c2e; color: white; border: none;" placeholder="Enter new username">
+                <button class="btn btn-primary" onclick="changeUsername()">Save</button>
+            </div>
+            <p class="text-white-50 mb-3" style="font-size: 14px;"><i class="bi bi-shield-lock-fill me-2"></i>Reset your password by sending a secure link to your email.</p>
+            <button class="btn btn-outline-light w-100 mb-3" onclick="sendPasswordReset()">Send Reset Email</button>
+        </div>
+
+        <div class="card-custom border border-danger">
+            <h6 class="sub-label mb-3 fw-bold text-danger"><i class="bi bi-door-open-fill me-2"></i>Danger Zone</h6>
+            <button onclick="handleLogout()" class="btn btn-danger w-100 fw-bold">Logout</button>
+        </div>
+    </div>
+
+    <!-- Automation/Rules Page (Phase 2) -->
+    <div id="automationPage" class="container" style="display: none;">
+        <div class="card-custom mb-4">
+            <h5 class="fw-bold mb-3 text-white"><i class="bi bi-gear-fill me-2"></i>Energy Rules & Automation</h5>
+            <button class="btn btn-primary mb-3" onclick="showRuleBuilder()">+ Create New Rule</button>
+            
+            <div id="rulesList">
+                <!-- Rules will be populated here -->
+            </div>
+            <div id="noRulesMessage" class="text-center text-white-50 py-4">
+                <p>No automation rules created yet. Create one to monitor energy usage automatically.</p>
+            </div>
+        </div>
+
+        <!-- Rule Builder Modal Content (embedded) -->
+        <div id="ruleBuilderSection" class="card-custom" style="display: none;">
+            <h6 class="fw-bold mb-3 text-white">Build Rule</h6>
+            <div class="mb-3">
+                <label class="sub-label">Rule Name</label>
+                <input type="text" id="ruleName" class="form-control" style="background: #2c2c2e; color: white; border: none;" placeholder="e.g., High Usage Alert">
+            </div>
+            <div class="mb-3">
+                <label class="sub-label">When</label>
+                <select id="ruleCondition" class="custom-select">
+                    <option value="usage_high">Usage exceeds</option>
+                    <option value="usage_low">Usage drops below</option>
+                    <option value="theft_suspected">Theft suspected</option>
+                    <option value="anomaly">Anomaly detected</option>
+                </select>
+            </div>
+            <div class="mb-3" id="thresholdInput">
+                <label class="sub-label">Threshold Value</label>
+                <input type="number" id="ruleThreshold" class="form-control" style="background: #2c2c2e; color: white; border: none;" placeholder="e.g., 15 (Amperes)">
+            </div>
+            <div class="mb-3">
+                <label class="sub-label">Action</label>
+                <select id="ruleAction" class="custom-select">
+                    <option value="alert">Send Alert</option>
+                    <option value="email">Send Email</option>
+                    <option value="disconnect">Disconnect Relay</option>
+                    <option value="log">Log Event</option>
+                </select>
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" onclick="saveRule()">Save Rule</button>
+                <button class="btn btn-secondary" onclick="cancelRuleBuilder()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Analytics Page (Phase 3/4) -->
+    <div id="analyticsPage" class="container" style="display: none;">
+        <div class="card-custom mb-4">
+            <h5 class="fw-bold mb-3 text-white"><i class="bi bi-graph-up me-2"></i>Advanced Analytics</h5>
+            <div class="row g-3 mb-4">
+                <div class="col-6">
+                    <div class="card-custom text-center p-3">
+                        <div class="sub-label">Avg Daily Usage</div>
+                        <div class="big-value" id="avgDailyUsage">0.00 A</div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="card-custom text-center p-3">
+                        <div class="sub-label">Peak Usage</div>
+                        <div class="big-value" id="peakUsage">0.00 A</div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="card-custom text-center p-3">
+                        <div class="sub-label">Anomalies Detected</div>
+                        <div class="big-value" id="anomalyCount">0</div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="card-custom text-center p-3">
+                        <div class="sub-label">Efficiency Score</div>
+                        <div class="big-value text-success" id="efficiencyScore">92%</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-custom mb-4">
+                <h6 class="fw-bold mb-3 text-white">Usage Patterns</h6>
+                <div style="position: relative; height: 320px; width: 100%;">
+                    <canvas id="patternChart" style="position: absolute; top: 0; left: 0; width: 100% !important; height: 100% !important;"></canvas>
+                </div>
+            </div>
+
+            <div class="card-custom mb-4">
+                <h6 class="fw-bold mb-3 text-white">Anomaly Detection Heatmap</h6>
+                <div style="position: relative; height: 280px; width: 100%;">
+                    <canvas id="anomalyChart" style="position: absolute; top: 0; left: 0; width: 100% !important; height: 100% !important;"></canvas>
+                </div>
+            </div>
+
+            <div class="card-custom">
+                <h6 class="fw-bold mb-3 text-white">Hourly Distribution (24h)</h6>
+                <div id="hourlyBreakdown"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="pairingModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content bg-dark text-white">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title fw-bold">Device Pairing</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <p class="text-white-50 mb-3" style="font-size: 14px;">Link your ESP32 hardware to monitor your live data stream.</p>
+                    <div class="d-flex gap-2">
+                        <input type="text" id="macInput" class="form-control" style="background: #2c2c2e; color: white; border: none; text-transform: uppercase;" placeholder="MAC (e.g., 24:0A:C4:XX:XX:XX)">
+                        <button class="btn btn-primary" onclick="pairDevice()">Pair</button>
+                    </div>
+                    <small class="text-info mt-3 d-block" id="pairedDeviceLabel">No device paired yet.</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="helpModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content bg-dark text-white">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title fw-bold">System Guide</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4" style="max-height: 75vh; overflow-y: auto;">
+                    <p class="text-white-50 mb-4" style="font-size: 15px;">Your complete guide to monitoring your grid and detecting power theft.</p>
+
+                    <h6 class="fw-bold text-warning mb-3"><i class="bi bi-lightning-charge-fill me-2"></i>Quick Start Guide</h6>
+
+                    <div class="mb-4">
+                        <h6 class="fw-bold" style="color: #ff3b30;"><i class="bi bi-exclamation-triangle-fill me-2"></i>1. Theft Detection</h6>
+                        <p class="text-white-50" style="font-size: 14px;">The system compares the <strong>Source</strong> (grid power) with the <strong>Load</strong> (household consumption). If Source > Load by more than <strong>0.2A</strong>, a Critical Red Alert triggers instantly, indicating potential theft or bypass.</p>
+                    </div>
+
+                    <div class="mb-4">
+                        <h6 class="fw-bold text-info"><i class="bi bi-graph-up me-2"></i>2. Dashboard Analytics</h6>
+                        <p class="text-white-50" style="font-size: 14px;">The <strong>Dashboard</strong> shows real-time charts: Blue chart = House Load, Yellow chart = Grid Source. Compare them to detect anomalies.</p>
+                    </div>
+
+                    <div class="mb-4">
+                        <h6 class="fw-bold text-success"><i class="bi bi-wallet2 me-2"></i>3. Cost Tracking</h6>
+                        <p class="text-white-50" style="font-size: 14px;">The <strong>Cost</strong> tab calculates your monthly bill based on consumption and rate per unit. Set your local electricity rate to get accurate estimates.</p>
+                    </div>
+
+                    <div class="mb-4">
+                        <h6 class="fw-bold text-primary"><i class="bi bi-gear-fill me-2"></i>4. Rules & Automation</h6>
+                        <p class="text-white-50" style="font-size: 14px;">Use the <strong>Rules</strong> tab to create automated responses (alerts, emails, relay disconnect) when thresholds are exceeded or anomalies detected.</p>
+                    </div>
+
+                    <div class="mb-4">
+                        <h6 class="fw-bold text-secondary"><i class="bi bi-graph-up me-2"></i>5. Advanced Analytics</h6>
+                        <p class="text-white-50" style="font-size: 14px;">The <strong>Analytics</strong> tab shows usage patterns, peak times, efficiency scores, and anomaly heatmaps over time periods.</p>
+                    </div>
+
+                    <div class="mb-4">
+                        <h6 class="fw-bold text-info"><i class="bi bi-table me-2"></i>6. Dataset & Filtering</h6>
+                        <p class="text-white-50" style="font-size: 14px;">The <strong>Dataset</strong> tab allows you to load, filter, and analyze raw data. Export summaries as CSV for further analysis.</p>
+                    </div>
+
+                    <div class="mb-4">
+                        <h6 class="fw-bold text-warning"><i class="bi bi-power me-2"></i>7. Hardware Control</h6>
+                        <p class="text-white-50" style="font-size: 14px;">The <strong>Control</strong> tab lets you remotely toggle the relay to disconnect power. Use with caution in a safe environment.</p>
+                    </div>
+
+                    <div class="mb-0">
+                        <h6 class="fw-bold text-white"><i class="bi bi-lightbulb me-2"></i>8. Email Reports</h6>
+                        <p class="text-white-50 mb-0" style="font-size: 14px;">Enable email notifications in <strong>Settings</strong> to receive daily/weekly reports, alerts, and summaries of your energy consumption.</p>
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Removed loginModal as we now use dedicated login page -->
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    
+    <script src="script.js"></script>
+    <script src="phase2_4_functions.js"></script>
+
+    <!-- Service Worker Registration (Phase 4 - PWA Offline Support) -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').then(reg => {
+                    console.log('Service Worker registered successfully:', reg);
+                }).catch(err => {
+                    console.log('Service Worker registration failed:', err);
+                });
+            });
+        }
+    </script>
+</body>
+</html>
