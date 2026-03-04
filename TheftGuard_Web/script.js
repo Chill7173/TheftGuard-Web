@@ -28,6 +28,10 @@ let livePoleData = Array(60).fill(0);
 let liveTimeLabels = Array(60).fill('');
 
 let totalKWhConsumed = 0; 
+let currentGraphType = 'amps'; // Added for dynamic graph
+
+let liveLoadVoltData = Array(60).fill(0);
+let liveLoadWattsData = Array(60).fill(0);
 
 // ==========================================
 // 2. DEVICE PAIRING & LIVE LISTENER
@@ -73,6 +77,12 @@ relayToggle.addEventListener('change', (e) => {
     }
 });
 
+function formatUnit(value, unit) {
+    if (unit === 'W' && value >= 1000) return (value / 1000).toFixed(2) + " kW";
+    if (unit === 'A' && value < 1 && value > 0) return (value * 1000).toFixed(0) + " mA";
+    return value.toFixed(unit === 'V' ? 1 : 2) + " " + unit;
+}
+
 function startListeningToDevice(macAddress) {
     if (currentDeviceRef) currentDeviceRef.off(); 
     currentDeviceRef = database.ref('live_grid/' + macAddress);
@@ -86,7 +96,7 @@ function startListeningToDevice(macAddress) {
             const warningBanner = document.getElementById('offlineWarning');
             warningBanner.style.display = (now - lastSeen > 30000) ? "block" : "none";
 
-            // -- 2. SENSOR LOGIC (DUAL VOLTAGE) --
+            // -- 2. SENSOR LOGIC (DUAL VOLTAGE & WATTS) --
             const sourceVolt = data.voltage_source || 0;
             const loadVolt = data.voltage_load || 0;
             let poleValRaw = data.pole !== undefined ? parseFloat(data.pole) : 0.00;
@@ -94,13 +104,18 @@ function startListeningToDevice(macAddress) {
             
             if (poleValRaw < 0.10) poleValRaw = 0.00; 
             if (houseValRaw < 0.10) houseValRaw = 0.00; 
+
+            const sourceWatts = sourceVolt * poleValRaw;
+            const loadWatts = loadVolt * houseValRaw;
             
-            document.getElementById('sourceVoltageDisplay').innerText = sourceVolt.toFixed(1) + " V";
-            document.getElementById('loadVoltageDisplay').innerText = loadVolt.toFixed(1) + " V";
-            document.getElementById('poleCurrent').innerText = poleValRaw.toFixed(2) + " A";
-            document.getElementById('houseCurrent').innerText = houseValRaw.toFixed(2) + " A";
+            document.getElementById('sourceVoltageDisplay').innerText = formatUnit(sourceVolt, 'V');
+            document.getElementById('loadVoltageDisplay').innerText = formatUnit(loadVolt, 'V');
+            document.getElementById('poleCurrent').innerText = formatUnit(poleValRaw, 'A');
+            document.getElementById('houseCurrent').innerText = formatUnit(houseValRaw, 'A');
+            document.getElementById('sourceWattsDisplay').innerText = formatUnit(sourceWatts, 'W');
+            document.getElementById('loadWattsDisplay').innerText = formatUnit(loadWatts, 'W');
             
-            updateLiveCharts(houseValRaw, poleValRaw);
+            updateLiveCharts(houseValRaw, poleValRaw, loadVolt, loadWatts);
             
             // -- 3. ALERT LOGIC --
             const banner = document.getElementById('theftAlertBanner');
@@ -117,8 +132,7 @@ function startListeningToDevice(macAddress) {
 
             // -- 4. DYNAMIC COST CALCULATION --
             const ratePerUnit = parseFloat(document.getElementById('unitRate').value) || 7.5;
-            const powerWatts = loadVolt * houseValRaw; 
-            const kwhThisTick = (powerWatts * (2 / 3600)) / 1000;
+            const kwhThisTick = (loadWatts * (2 / 3600)) / 1000;
             totalKWhConsumed += kwhThisTick;
 
             const totalCost = (totalKWhConsumed * ratePerUnit).toFixed(2);
@@ -143,19 +157,50 @@ function startListeningToDevice(macAddress) {
     });
 }
 
-function updateLiveCharts(newHouseVal, newPoleVal) {
+function changeGraphMeasurement() {
+    currentGraphType = document.getElementById('measurementSelect').value;
+    updateGraphDisplay();
+}
+
+function updateGraphDisplay() {
+    let dataSet = [];
+    let color = '#0a84ff';
+    let unit = 'A';
+    
+    if (currentGraphType === 'amps') {
+        dataSet = liveHouseData;
+        color = '#0a84ff';
+        unit = 'A';
+    } else if (currentGraphType === 'volts') {
+        dataSet = liveLoadVoltData;
+        color = '#30d158';
+        unit = 'V';
+    } else if (currentGraphType === 'watts') {
+        dataSet = liveLoadWattsData;
+        color = '#ffcc00';
+        unit = 'W';
+    }
+
+    usageChart.data.datasets[0].data = dataSet;
+    usageChart.data.datasets[0].borderColor = color;
+    usageChart.data.datasets[0].backgroundColor = color + '1A';
+    document.getElementById('totalUsageDisplay').innerText = formatUnit(dataSet[59], unit);
+    usageChart.update('none');
+}
+
+function updateLiveCharts(newHouseVal, newPoleVal, loadVolt, loadWatts) {
     const now = new Date();
     const timeString = `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
     
     liveHouseData.shift(); liveHouseData.push(newHouseVal);
     livePoleData.shift(); livePoleData.push(newPoleVal);
+    liveLoadVoltData.shift(); liveLoadVoltData.push(loadVolt);
+    liveLoadWattsData.shift(); liveLoadWattsData.push(loadWatts);
     liveTimeLabels.shift(); liveTimeLabels.push(timeString);
     
     if (document.querySelectorAll('.view-tab')[0].classList.contains('active') || document.querySelectorAll('.view-tab')[1].classList.contains('active')) {
         usageChart.data.labels = liveTimeLabels;
-        usageChart.data.datasets[0].data = liveHouseData;
-        usageChart.update('none'); 
-        document.getElementById('totalUsageDisplay').innerText = newHouseVal.toFixed(2) + " A";
+        updateGraphDisplay();
     }
     
     if (document.querySelectorAll('.source-tab')[0].classList.contains('active') || document.querySelectorAll('.source-tab')[1].classList.contains('active')) {
@@ -304,6 +349,9 @@ function handleLogout() {
         document.getElementById('loadVoltageDisplay').innerText = "0.0 V";
         document.getElementById('poleCurrent').innerText = "0.00 A";
         document.getElementById('houseCurrent').innerText = "0.00 A";
+        document.getElementById('sourceWattsDisplay').innerText = "0.0 W";
+        document.getElementById('loadWattsDisplay').innerText = "0.0 W";
+        
         document.querySelectorAll('.card-custom').forEach(el => el.classList.remove('theft-active'));
         document.getElementById('theftAlertBanner').style.display = "none";
         document.getElementById('offlineWarning').style.display = "none";
@@ -315,7 +363,7 @@ function handleLogout() {
         document.getElementById('authEmail').value = ""; document.getElementById('authPassword').value = "";
         document.getElementById('macInput').value = ""; document.getElementById('pairedDeviceLabel').innerText = "No device paired yet.";
         
-        liveHouseData.fill(0); livePoleData.fill(0); liveTimeLabels.fill('');
+        liveHouseData.fill(0); livePoleData.fill(0); liveLoadVoltData.fill(0); liveLoadWattsData.fill(0); liveTimeLabels.fill('');
         usageChart.update(); sourceChart.update();
         totalKWhConsumed = 0;
     });
@@ -440,19 +488,11 @@ function setView(mode, element) {
     if (mode === 'minute') { 
         document.getElementById('timeLabel').innerText = "Live Real-Time Usage"; 
         document.getElementById('avgLabel').innerText = "Streaming from hardware...";
-        document.getElementById('totalUsageDisplay').innerText = Number(liveHouseData[59]).toFixed(2) + " A";
-        
-        usageChart.data.labels = liveTimeLabels;
-        usageChart.data.datasets[0].data = liveHouseData;
-        usageChart.update();
+        updateGraphDisplay();
     } else if (mode === 'hour') {
         document.getElementById('timeLabel').innerText = "Current Session (Last 60 ticks)"; 
         document.getElementById('avgLabel').innerText = "Active Database Feed";
-        document.getElementById('totalUsageDisplay').innerText = Number(liveHouseData[59]).toFixed(2) + " A";
-        
-        usageChart.data.labels = liveTimeLabels;
-        usageChart.data.datasets[0].data = liveHouseData;
-        usageChart.update();
+        updateGraphDisplay();
     } else if (mode === 'day') { 
         document.getElementById('daySelectorWrapper').style.display = 'block'; 
         updateDayData(); 
