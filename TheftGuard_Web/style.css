@@ -17,6 +17,22 @@ body {
     padding-bottom: 80px;
     padding-top: 80px; 
 }
+/* Landing Page Specific Styles */
+.landing-container {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    background: radial-gradient(circle at center, #1c1c1e 0%, #000000 100%);
+    padding: 20px;
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    z-index: 1000; 
+    /* FIXED: Lowered from 2000 so the Bootstrap modal (1055) appears on top */
+}
+
 
 /* NAVBAR */
 .custom-navbar {

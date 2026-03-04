@@ -18,15 +18,16 @@ const auth = firebase.auth();
 
 let currentUserUid = null;
 let currentDeviceRef = null; 
+let isLoginMode = true; // For the new clean auth modal
 
-// Relay DOM Elements
 const relayToggle = document.getElementById('relayToggle');
 const relayStatusText = document.getElementById('relayStatusText');
 
-// Live Chart Data Arrays (Hold 60 data points for Live/Hour tabs)
 let liveHouseData = Array(60).fill(0);
 let livePoleData = Array(60).fill(0);
 let liveTimeLabels = Array(60).fill('');
+
+let totalKWhConsumed = 0; 
 
 // ==========================================
 // 2. DEVICE PAIRING & LIVE LISTENER
@@ -57,10 +58,8 @@ function pairDevice() {
     });
 }
 
-// SEND RELAY COMMANDS 
 relayToggle.addEventListener('change', (e) => {
     const isCutoff = e.target.checked;
-    
     if (currentDeviceRef) {
         currentDeviceRef.child('relay_cutoff').set(isCutoff);
     } else {
@@ -81,30 +80,34 @@ function startListeningToDevice(macAddress) {
     currentDeviceRef.on('value', (snapshot) => {
         const data = snapshot.val();
         if (data) {
-            // -- SENSOR LOGIC (WITH DEADBAND) --
+            // -- 1. HEARTBEAT / OFFLINE LOGIC --
+            const lastSeen = data.last_seen || 0; 
+            const now = Date.now();
+            const warningBanner = document.getElementById('offlineWarning');
+            warningBanner.style.display = (now - lastSeen > 30000) ? "block" : "none";
+
+            // -- 2. SENSOR LOGIC (DUAL VOLTAGE) --
+            const sourceVolt = data.voltage_source || 0;
+            const loadVolt = data.voltage_load || 0;
             let poleValRaw = data.pole !== undefined ? parseFloat(data.pole) : 0.00;
             let houseValRaw = data.house !== undefined ? parseFloat(data.house) : 0.00;
             
-            // DEADBAND: Ignore "Vampire Power" (< 0.10A)
             if (poleValRaw < 0.10) poleValRaw = 0.00; 
             if (houseValRaw < 0.10) houseValRaw = 0.00; 
             
-            let poleVal = poleValRaw.toFixed(2);
-            let houseVal = houseValRaw.toFixed(2);
+            document.getElementById('sourceVoltageDisplay').innerText = sourceVolt.toFixed(1) + " V";
+            document.getElementById('loadVoltageDisplay').innerText = loadVolt.toFixed(1) + " V";
+            document.getElementById('poleCurrent').innerText = poleValRaw.toFixed(2) + " A";
+            document.getElementById('houseCurrent').innerText = houseValRaw.toFixed(2) + " A";
             
-            document.getElementById('poleCurrent').innerText = poleVal + " A";
-            document.getElementById('houseCurrent').innerText = houseVal + " A";
-            
-            // Push Real Data to Charts
             updateLiveCharts(houseValRaw, poleValRaw);
             
-            // 🚨 UPDATED ALERT LOGIC (Threshold: 0.15A)
+            // -- 3. ALERT LOGIC --
             const banner = document.getElementById('theftAlertBanner');
             let currentDiff = Math.abs(poleValRaw - houseValRaw);
-            
             if (currentDiff > 0.15) {
-                document.querySelectorAll('.card-custom')[0].classList.add('theft-active');
-                document.querySelectorAll('.card-custom')[2].classList.add('theft-active'); 
+                document.querySelectorAll('.card-custom')[1].classList.add('theft-active');
+                document.querySelectorAll('.card-custom')[3].classList.add('theft-active'); 
                 banner.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i> CRITICAL ALERT: THEFT DETECTED (${currentDiff.toFixed(2)}A LOSS)`;
                 banner.style.display = "block"; 
             } else {
@@ -112,7 +115,19 @@ function startListeningToDevice(macAddress) {
                 banner.style.display = "none"; 
             }
 
-            // -- RELAY CUTOFF --
+            // -- 4. DYNAMIC COST CALCULATION --
+            const ratePerUnit = parseFloat(document.getElementById('unitRate').value) || 7.5;
+            const powerWatts = loadVolt * houseValRaw; 
+            const kwhThisTick = (powerWatts * (2 / 3600)) / 1000;
+            totalKWhConsumed += kwhThisTick;
+
+            const totalCost = (totalKWhConsumed * ratePerUnit).toFixed(2);
+            document.getElementById('calculatedTotal').innerText = "₹ " + totalCost;
+            document.getElementById('costPageTotal').innerText = "₹ " + totalCost;
+            document.getElementById('totalUnitsText').innerText = totalKWhConsumed.toFixed(4);
+            document.getElementById('consumedKwhDisplay').innerText = `Consumed: ${totalKWhConsumed.toFixed(4)} kWh`;
+
+            // -- 5. RELAY CUTOFF SYNC --
             const isCutoff = data.relay_cutoff === true;
             if (relayToggle.checked !== isCutoff) {
                 relayToggle.checked = isCutoff;
@@ -128,7 +143,6 @@ function startListeningToDevice(macAddress) {
     });
 }
 
-// Function to push real data into the charts
 function updateLiveCharts(newHouseVal, newPoleVal) {
     const now = new Date();
     const timeString = `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
@@ -137,7 +151,6 @@ function updateLiveCharts(newHouseVal, newPoleVal) {
     livePoleData.shift(); livePoleData.push(newPoleVal);
     liveTimeLabels.shift(); liveTimeLabels.push(timeString);
     
-    // Update Blue Chart if Live or Hour is selected
     if (document.querySelectorAll('.view-tab')[0].classList.contains('active') || document.querySelectorAll('.view-tab')[1].classList.contains('active')) {
         usageChart.data.labels = liveTimeLabels;
         usageChart.data.datasets[0].data = liveHouseData;
@@ -145,7 +158,6 @@ function updateLiveCharts(newHouseVal, newPoleVal) {
         document.getElementById('totalUsageDisplay').innerText = newHouseVal.toFixed(2) + " A";
     }
     
-    // Update Yellow Chart if Live or Hour is selected
     if (document.querySelectorAll('.source-tab')[0].classList.contains('active') || document.querySelectorAll('.source-tab')[1].classList.contains('active')) {
         sourceChart.data.labels = liveTimeLabels;
         sourceChart.data.datasets[0].data = livePoleData;
@@ -154,20 +166,44 @@ function updateLiveCharts(newHouseVal, newPoleVal) {
     }
 }
 
+document.getElementById('unitRate').addEventListener('input', () => {
+    const ratePerUnit = parseFloat(document.getElementById('unitRate').value) || 7.5;
+    const totalCost = (totalKWhConsumed * ratePerUnit).toFixed(2);
+    document.getElementById('calculatedTotal').innerText = "₹ " + totalCost;
+    document.getElementById('costPageTotal').innerText = "₹ " + totalCost;
+});
+
 // ==========================================
-// 3. FIREBASE AUTHENTICATION (WITH PERSISTENCE)
+// 3. FIREBASE AUTHENTICATION & UI FLOW
 // ==========================================
 
 auth.onAuthStateChanged((user) => {
     if (user && user.emailVerified) {
         currentUserUid = user.uid; 
-        document.getElementById('loginBtn').style.display = 'none';
+        
+        // Hide Landing, Show Dashboard App
+        document.getElementById('landingPage').style.display = 'none';
+        document.getElementById('mainNavbar').style.display = 'flex';
+        document.getElementById('dashboardPage').style.display = 'block';
+        
         document.getElementById('userProfile').style.display = 'flex';
         const username = user.displayName ? user.displayName.toUpperCase() : user.email.split('@')[0].toUpperCase();
         document.getElementById('userNameDisplay').innerText = username;
         loadPairedDevice(); 
+        
+        // Close modal if open
+        const modalEl = document.getElementById('authModal');
+        if(modalEl.classList.contains('show')){
+            bootstrap.Modal.getInstance(modalEl).hide();
+        }
+        
     } else if (user && !user.emailVerified) {
         auth.signOut();
+    } else {
+        // Logged out state: Show Landing, Hide App
+        document.getElementById('landingPage').style.display = 'flex';
+        document.getElementById('mainNavbar').style.display = 'none';
+        document.getElementById('dashboardPage').style.display = 'none';
     }
 });
 
@@ -176,62 +212,78 @@ function isValidEmail(email) {
     return emailRegex.test(email);
 }
 
-function handleRegister(e) {
-    e.preventDefault();
-    const email = document.getElementById('loginEmail').value;
-    const password = document.getElementById('loginPassword').value;
-    const registerBtn = document.getElementById('registerBtn');
+// Toggle between Login and Register in the Modal
+function toggleAuthMode() {
+    isLoginMode = !isLoginMode;
+    const title = document.getElementById('authTitle');
+    const subtitle = document.getElementById('authSubtitle');
+    const btn = document.getElementById('authSubmitBtn');
+    const toggleText = document.getElementById('authToggleText');
+    const toggleLink = document.querySelector('.auth-toggle-link');
+    const forgotPw = document.getElementById('forgotPasswordContainer');
 
-    if (!email || !password) return alert("Please enter both an email and a password.");
-    if (!isValidEmail(email)) return alert("Please enter a valid email address.");
-    if (password.length < 6) return alert("Firebase requires passwords to be at least 6 characters long.");
-
-    registerBtn.innerText = "Creating..."; registerBtn.disabled = true;
-
-    auth.createUserWithEmailAndPassword(email, password).then((userCredential) => {
-        userCredential.user.sendEmailVerification().then(() => {
-            alert("Account created! A verification link has been sent. Please verify before logging in.");
-            auth.signOut();
-            bootstrap.Modal.getInstance(document.getElementById('loginModal')).hide();
-            registerBtn.innerText = "Create Account"; registerBtn.disabled = false;
-            document.getElementById('loginEmail').value = ""; document.getElementById('loginPassword').value = "";
-        });
-    }).catch((error) => {
-        alert("Registration Failed: " + error.message);
-        registerBtn.innerText = "Create Account"; registerBtn.disabled = false;
-    });
+    if(isLoginMode) {
+        title.innerText = "Welcome Back";
+        subtitle.innerText = "Please enter your details to sign in.";
+        btn.innerText = "Sign In";
+        toggleText.innerText = "Don't have an account?";
+        toggleLink.innerText = "Sign up";
+        forgotPw.style.display = "block";
+    } else {
+        title.innerText = "Create Account";
+        subtitle.innerText = "Register to monitor your energy grid.";
+        btn.innerText = "Register";
+        toggleText.innerText = "Already have an account?";
+        toggleLink.innerText = "Sign in";
+        forgotPw.style.display = "none";
+    }
 }
 
-function handleLogin(e) {
-    e.preventDefault(); 
-    const email = document.getElementById('loginEmail').value;
-    const password = document.getElementById('loginPassword').value;
-    const loginBtn = document.getElementById('loginSubmitBtn');
+function submitAuth(e) {
+    e.preventDefault();
+    const email = document.getElementById('authEmail').value;
+    const password = document.getElementById('authPassword').value;
+    const btn = document.getElementById('authSubmitBtn');
 
     if (!isValidEmail(email)) return alert("Please enter a valid email address.");
-    loginBtn.innerText = "Verifying..."; loginBtn.disabled = true;
+    
+    if (!isLoginMode && password.length < 6) {
+        return alert("Firebase requires passwords to be at least 6 characters long.");
+    }
 
-    auth.signInWithEmailAndPassword(email, password).then((userCredential) => {
-        if (!userCredential.user.emailVerified) {
-            alert("Access Denied: Please verify your email address first.");
-            auth.signOut(); loginBtn.innerText = "Login"; loginBtn.disabled = false; return;
-        }
-        currentUserUid = userCredential.user.uid; 
-        bootstrap.Modal.getInstance(document.getElementById('loginModal')).hide();
-        document.getElementById('loginBtn').style.display = 'none';
-        document.getElementById('userProfile').style.display = 'flex';
-        const username = userCredential.user.displayName ? userCredential.user.displayName.toUpperCase() : userCredential.user.email.split('@')[0].toUpperCase();
-        document.getElementById('userNameDisplay').innerText = username;
-        loadPairedDevice(); 
-        loginBtn.innerText = "Login"; loginBtn.disabled = false;
-    }).catch((error) => {
-        alert("Login Failed: " + error.message);
-        loginBtn.innerText = "Login"; loginBtn.disabled = false;
-    });
+    btn.innerText = "Processing..."; btn.disabled = true;
+
+    if (isLoginMode) {
+        auth.signInWithEmailAndPassword(email, password).then((userCredential) => {
+            if (!userCredential.user.emailVerified) {
+                alert("Access Denied: Please verify your email address first.");
+                auth.signOut(); 
+                btn.innerText = "Sign In"; btn.disabled = false; 
+                return;
+            }
+            btn.innerText = "Sign In"; btn.disabled = false;
+        }).catch((error) => {
+            alert("Login Failed: " + error.message);
+            btn.innerText = "Sign In"; btn.disabled = false;
+        });
+    } else {
+        auth.createUserWithEmailAndPassword(email, password).then((userCredential) => {
+            userCredential.user.sendEmailVerification().then(() => {
+                alert("Account created! A verification link has been sent. Please verify before logging in.");
+                auth.signOut();
+                toggleAuthMode(); // Switch back to login view
+                btn.innerText = "Sign In"; btn.disabled = false;
+                document.getElementById('authEmail').value = ""; document.getElementById('authPassword').value = "";
+            });
+        }).catch((error) => {
+            alert("Registration Failed: " + error.message);
+            btn.innerText = "Register"; btn.disabled = false;
+        });
+    }
 }
 
 function handleForgotPassword() {
-    let email = document.getElementById('loginEmail').value.trim();
+    let email = document.getElementById('authEmail').value.trim();
     if (!email) email = prompt("Please enter your registered email address:");
     if (!email) return; 
     if (!isValidEmail(email)) return alert("Please enter a valid email address.");
@@ -246,23 +298,26 @@ function handleLogout() {
         currentUserUid = null;
         if (currentDeviceRef) currentDeviceRef.off(); 
         document.getElementById('userProfile').style.display = 'none';
-        document.getElementById('loginBtn').style.display = 'block';
         document.getElementById('nav-pair').style.display = 'none'; 
         
+        document.getElementById('sourceVoltageDisplay').innerText = "0.0 V";
+        document.getElementById('loadVoltageDisplay').innerText = "0.0 V";
         document.getElementById('poleCurrent').innerText = "0.00 A";
         document.getElementById('houseCurrent').innerText = "0.00 A";
         document.querySelectorAll('.card-custom').forEach(el => el.classList.remove('theft-active'));
         document.getElementById('theftAlertBanner').style.display = "none";
+        document.getElementById('offlineWarning').style.display = "none";
         
         relayToggle.checked = false;
         relayStatusText.innerText = "Power is ON";
         relayStatusText.style.color = "#4CAF50";
         
-        document.getElementById('loginEmail').value = ""; document.getElementById('loginPassword').value = "";
+        document.getElementById('authEmail').value = ""; document.getElementById('authPassword').value = "";
         document.getElementById('macInput').value = ""; document.getElementById('pairedDeviceLabel').innerText = "No device paired yet.";
         
         liveHouseData.fill(0); livePoleData.fill(0); liveTimeLabels.fill('');
         usageChart.update(); sourceChart.update();
+        totalKWhConsumed = 0;
     });
 }
 
@@ -312,13 +367,6 @@ function showPage(pageId) {
         document.getElementById('nav-cost').classList.add('active');
         renderCostChart();
     }
-}
-
-function calculateCost() {
-    const units = 190.2; 
-    const rate = document.getElementById('unitRate').value;
-    const total = (units * rate).toFixed(2);
-    document.getElementById('calculatedTotal').innerText = "₹ " + total;
 }
 
 function renderCostChart() {
@@ -392,7 +440,6 @@ function setView(mode, element) {
     if (mode === 'minute') { 
         document.getElementById('timeLabel').innerText = "Live Real-Time Usage"; 
         document.getElementById('avgLabel').innerText = "Streaming from hardware...";
-        // 🚨 FIX: Instantly pull the latest real-time value instead of leaving the demo text!
         document.getElementById('totalUsageDisplay').innerText = Number(liveHouseData[59]).toFixed(2) + " A";
         
         usageChart.data.labels = liveTimeLabels;
@@ -401,7 +448,6 @@ function setView(mode, element) {
     } else if (mode === 'hour') {
         document.getElementById('timeLabel').innerText = "Current Session (Last 60 ticks)"; 
         document.getElementById('avgLabel').innerText = "Active Database Feed";
-        // 🚨 FIX: Instantly pull the latest real-time value!
         document.getElementById('totalUsageDisplay').innerText = Number(liveHouseData[59]).toFixed(2) + " A";
         
         usageChart.data.labels = liveTimeLabels;
@@ -420,7 +466,7 @@ function setView(mode, element) {
         let labels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
         let data = Array.from({length: 12}, () => Math.random() * 50 + 100);
         let total = data.reduce((a, b) => a + b, 0);
-        document.getElementById('timeLabel').innerText = "Year 2026 (Demo Data)";
+        document.getElementById('timeLabel').innerText = "Year Data (Demo)";
         document.getElementById('totalUsageDisplay').innerText = total.toFixed(1) + " kWh";
         document.getElementById('avgLabel').innerText = "Total: 1.2 MWh";
         usageChart.data.labels = labels; usageChart.data.datasets[0].data = data; usageChart.update();
@@ -479,7 +525,6 @@ function setSourceView(mode, element) {
     if (mode === 'minute') { 
         document.getElementById('sourceTimeLabel').innerText = "Live Real-Time Source"; 
         document.getElementById('sourceAvgLabel').innerText = "Streaming from hardware...";
-        // 🚨 FIX: Instantly pull the latest real-time value!
         document.getElementById('sourceTotalDisplay').innerText = Number(livePoleData[59]).toFixed(2) + " A";
         
         sourceChart.data.labels = liveTimeLabels;
@@ -488,7 +533,6 @@ function setSourceView(mode, element) {
     } else if (mode === 'hour') {
         document.getElementById('sourceTimeLabel').innerText = "Current Session (Last 60 ticks)"; 
         document.getElementById('sourceAvgLabel').innerText = "Active Database Feed";
-        // 🚨 FIX: Instantly pull the latest real-time value!
         document.getElementById('sourceTotalDisplay').innerText = Number(livePoleData[59]).toFixed(2) + " A";
         
         sourceChart.data.labels = liveTimeLabels;
@@ -507,7 +551,7 @@ function setSourceView(mode, element) {
         let labels = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
         let data = Array.from({length: 12}, () => Math.random() * 55 + 100); 
         let total = data.reduce((a, b) => a + b, 0);
-        document.getElementById('sourceTimeLabel').innerText = "Year 2026 (Demo Data)";
+        document.getElementById('sourceTimeLabel').innerText = "Year Data (Demo)";
         document.getElementById('sourceTotalDisplay').innerText = total.toFixed(1) + " kWh";
         document.getElementById('sourceAvgLabel').innerText = "Total: 1.3 MWh";
         sourceChart.data.labels = labels; sourceChart.data.datasets[0].data = data; sourceChart.update();
