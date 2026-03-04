@@ -1,7 +1,7 @@
 // TheftGuard Service Worker
 // Provides offline support, caching, and PWA capabilities
 
-const CACHE_NAME = 'theftguard-v1';
+const CACHE_NAME = 'theftguard-v2';
 const urlsToCache = [
     '/',
     '/index.html',

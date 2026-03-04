@@ -34,6 +34,7 @@ let userSettings = {
 let deviceOnline = false;
 let lastTheftAlert = 0;
 let lastAnomalyAlert = 0;
+const THEFT_DETECTION_THRESHOLD_AMPS = 0.2;
 
 // ==========================================
 // 1.5 NOTIFICATION & SETTINGS SYSTEM (Phase 1)
@@ -334,7 +335,7 @@ function startListeningToDevice(macAddress) {
             }
             
             // ==================== THEFT DETECTION ====================
-            if (difference > 1.0) {
+            if (difference > THEFT_DETECTION_THRESHOLD_AMPS) {
                 // Theft detected
                 const banner = document.getElementById('theftAlertBanner');
                 document.querySelectorAll('.card-custom')[0].classList.add('theft-active');
@@ -816,28 +817,69 @@ function exportDatasetSummary() {
 function changeSetting(key, value) {
     userSettings[key] = value;
     localStorage.setItem('theftguardSettings', JSON.stringify(userSettings));
-    if (key === 'theme') applyTheme(value);
+
+    if (key === 'theme') {
+        applyTheme(value);
+    }
+
+    if (key === 'unit' && realTimeReadings.length > 0) {
+        const last = realTimeReadings[realTimeReadings.length - 1];
+        updateReadingDisplay(last.pole_current, last.house_current);
+        if (typeof calculateAnalytics === 'function') calculateAnalytics();
+        const autoPage = document.getElementById('automationPage');
+        if (autoPage && autoPage.style.display !== 'none' && typeof updateRulesList === 'function') {
+            updateRulesList();
+        }
+    }
+
     showToast('Settings Updated', `${key} has been changed`, 'success', 3000);
 }
 
 function loadSettings() {
+    const defaults = {
+        theme: 'dark',
+        unit: 'A',
+        refresh: 10,
+        alertTheft: true,
+        alertAnomalies: true,
+        alertSummaryEmail: false
+    };
+    userSettings = { ...defaults, ...userSettings };
+
     const saved = localStorage.getItem('theftguardSettings');
-    if (saved) userSettings = JSON.parse(saved);
+    if (saved) {
+        try {
+            userSettings = { ...defaults, ...userSettings, ...JSON.parse(saved) };
+        } catch (e) {
+            console.error('Failed to parse theftguardSettings from localStorage:', e);
+        }
+    }
+
     applyTheme(userSettings.theme);
-    document.getElementById('themeSelect').value = userSettings.theme;
-    document.getElementById('unitSelect').value = userSettings.unit;
-    document.getElementById('refreshSelect').value = userSettings.refresh;
-    document.getElementById('alertTheft').checked = userSettings.alertTheft;
-    document.getElementById('alertAnomalies').checked = userSettings.alertAnomalies;
-    document.getElementById('alertSummaryEmail').checked = userSettings.alertSummaryEmail;
+
+    const themeSelect = document.getElementById('themeSelect');
+    if (themeSelect) themeSelect.value = userSettings.theme;
+
+    const unitSelect = document.getElementById('unitSelect');
+    if (unitSelect) unitSelect.value = userSettings.unit;
+
+    const refreshSelect = document.getElementById('refreshSelect');
+    if (refreshSelect) refreshSelect.value = String(userSettings.refresh);
+
+    const alertTheft = document.getElementById('alertTheft');
+    if (alertTheft) alertTheft.checked = !!userSettings.alertTheft;
+
+    const alertAnomalies = document.getElementById('alertAnomalies');
+    if (alertAnomalies) alertAnomalies.checked = !!userSettings.alertAnomalies;
+
+    const alertSummary = document.getElementById('alertSummaryEmail');
+    if (alertSummary) alertSummary.checked = !!userSettings.alertSummaryEmail;
 }
 
 function applyTheme(theme) {
-    if (theme === 'light') {
-        document.body.classList.add('light-theme');
-    } else {
-        document.body.classList.remove('light-theme');
-    }
+    if (!document.body) return;
+    if (theme === 'light') document.body.classList.add('light-theme');
+    else document.body.classList.remove('light-theme');
 }
 
 function updateDeviceStatus(online) {
