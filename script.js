@@ -34,7 +34,7 @@ let userSettings = {
 let deviceOnline = false;
 let lastTheftAlert = 0;
 let lastAnomalyAlert = 0;
-const THEFT_DETECTION_THRESHOLD_AMPS = 0.2;
+const THEFT_DETECTION_THRESHOLD_AMPS = 0.15;
 
 // ==========================================
 // 1.5 NOTIFICATION & SETTINGS SYSTEM (Phase 1)
