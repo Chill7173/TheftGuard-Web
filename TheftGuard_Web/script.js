@@ -17,8 +17,37 @@ const database = firebase.database();
 const auth = firebase.auth();
 
 let currentUserUid = null;
-let currentDeviceRef = null; 
+let currentDeviceRef = null;
 let isLoginMode = true; // For the new clean auth modal
+
+// 1. Initialize messaging here in the global scope
+const messaging = firebase.messaging();
+
+// 2. Wrap the permission request inside a FUNCTION so it doesn't run instantly
+function enableNotifications() {
+    Notification.requestPermission().then((permission) => {
+        if (permission === 'granted') {
+            console.log('Notification permission granted.');
+            
+            // Generate Token
+            messaging.getToken({ vapidKey: 'BP1gFNXwoiHsh-C1aQviKT4P_CV0xsbEUu0nrWBzQwKSzdxTeIHajwTnZ0Ggob91w3Olxgq2LiJC2MDVEQAcN6A' }).then((currentToken) => {
+                if (currentToken) {
+                    console.log('YOUR DEVICE TOKEN IS:', currentToken);
+                    
+                    // Optional: Save to database under the logged-in user
+                    if (currentUserUid) {
+                        firebase.database().ref('users/' + currentUserUid + '/fcm_token').set(currentToken);
+                    }
+                }
+            });
+        }
+    });
+}
+
+// 3. Catch notifications while the app is open
+messaging.onMessage((payload) => {
+    alert("🚨 " + payload.notification.title + "\n" + payload.notification.body);
+});
 
 const relayToggle = document.getElementById('relayToggle');
 const relayStatusText = document.getElementById('relayStatusText');
